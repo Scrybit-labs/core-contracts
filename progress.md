@@ -397,32 +397,28 @@ isPositionHolder[eventId][outcomeId][user] = true;
 
 1. 完整的资金生命周期管理:
 
+   - 下单 → 锁定资金
+   - 撮合 → 结算资金
+   - 撤单 → 解锁资金
+   - 结算 → 分配奖金
 
-    - 下单 → 锁定资金
-    - 撮合 → 结算资金
-    - 撤单 → 解锁资金
-    - 结算 → 分配奖金
+1. 精确的持仓跟踪:
 
-2. 精确的持仓跟踪:
+   - 买单增加持仓
+   - 卖单减少持仓
+   - 自动记录持仓者用于结算遍历
 
+1. 智能的资金锁定计算:
 
-    - 买单增加持仓
-    - 卖单减少持仓
-    - 自动记录持仓者用于结算遍历
+   - 买单锁定: amount \* price / 10000 (支付金额)
+   - 卖单锁定: amount (完整数量)
 
-3. 智能的资金锁定计算:
+1. 完整的事件结算流程:
 
-
-    - 买单锁定: amount * price / 10000 (支付金额)
-    - 卖单锁定: amount (完整数量)
-
-4. 完整的事件结算流程:
-
-
-    - 批量撤销所有挂单
-    - 解锁未成交资金
-    - 遍历获胜者
-    - 分配奖金池
+   - 批量撤销所有挂单
+   - 解锁未成交资金
+   - 遍历获胜者
+   - 分配奖金池
 
 📈 编译结果
 
@@ -461,3 +457,203 @@ isPositionHolder[eventId][outcomeId][user] = true;
 现在订单簿系统已经完全集成了资金管理系统,形成了完整的交易闭环:
 
 1. 用户入金 (FundingManager) → 下单锁定 (OrderBookPod) → 撮合结算 (OrderBookPod + FundingPod) → 事件结算 (EventPod + OrderBookPod + FundingPod) → 提现 (FundingManager)
+
+● 📊 模块四完成总结
+
+✅ 已完成的工作
+
+1. 接口层设计
+
+IFeeVaultPod.sol (124 行) - 完整的手续费管理接口:
+
+- 事件: FeeCollected, FeeWithdrawn, FeeRateUpdated, FeeRecipientUpdated
+- 错误: InvalidFeeRate, InvalidRecipient, InsufficientFeeBalance, InvalidAmount
+- 核心功能:
+  - collectFee() - 收取手续费
+  - withdrawFee() - 提取手续费
+  - setFeeRate() - 设置费率
+  - setFeeRecipient() - 设置接收者
+- 查询功能:
+  - getFeeBalance() - 查询余额
+  - getFeeRate() - 查询费率
+  - calculateFee() - 计算手续费
+
+IFeeVaultManager.sol (103 行) - 管理器接口:
+
+- Pod 管理: addPodToWhitelist(), removePodFromWhitelist(), registerEventToPod()
+- 手续费操作: collectFee(), withdrawFee()
+- 查询功能: isPodWhitelisted(), getEventPod(), getPodFeeBalance()
+
+2. 存储层设计
+
+FeeVaultPodStorage.sol (67 行):
+
+- ⭐ 费率配置: feeRates[feeType] 映射,支持多种手续费类型
+- ⭐ 费率管理: feeRateKeys[] 数组 + feeRateKeyExists 映射用于遍历
+- ⭐ 余额管理: feeBalances[token] 存储各 Token 的手续费余额
+- ⭐ 统计数据: totalFeesCollected, totalFeesWithdrawn, eventFees, userPaidFees
+- 常量: FEE_PRECISION = 10000, MAX_FEE_RATE = 1000 (最大 10%)
+
+FeeVaultManagerStorage.sol (26 行):
+
+- Pod 白名单: podIsWhitelisted[pod]
+- 事件路由: eventIdToPod[eventId]
+
+3. 业务逻辑实现
+
+FeeVaultManager.sol (184 行):
+
+- ✅ Pod 白名单管理
+- ✅ 事件注册到 Pod
+- ✅ 手续费收取路由
+- ✅ 手续费提取(仅 owner)
+- ✅ 查询功能
+- ✅ 暂停控制
+
+FeeVaultPod.sol (261 行) - 核心实现:
+
+✅ 手续费收取 (src/event/pod/FeeVaultPod.sol:85-103)
+
+function collectFee(
+address token,
+address payer,
+uint256 amount,
+uint256 eventId,
+string calldata feeType
+) external whenNotPaused onlyOrderBookPod {
+// 更新余额
+feeBalances[token] += amount;
+totalFeesCollected[token] += amount;
+
+      // 统计
+      eventFees[eventId][token] += amount;
+      userPaidFees[payer][token] += amount;
+
+      emit FeeCollected(token, payer, amount, eventId, feeType);
+
+}
+
+✅ 手续费提取 (src/event/pod/FeeVaultPod.sol:111-139)
+
+function withdrawFee(address token, address recipient, uint256 amount)
+external onlyOwner nonReentrant {
+uint256 available = feeBalances[token];
+if (available < amount) {
+revert InsufficientFeeBalance(token, amount, available);
+}
+
+      feeBalances[token] -= amount;
+      totalFeesWithdrawn[token] += amount;
+
+      // 支持 ETH 和 ERC20
+      if (token == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)) {
+          (bool sent, ) = recipient.call{value: amount}("");
+          require(sent, "FeeVaultPod: failed to send ETH");
+      } else {
+          IERC20(token).safeTransfer(recipient, amount);
+      }
+
+}
+
+✅ 费率管理 (src/event/pod/FeeVaultPod.sol:155-170)
+
+function \_setFeeRate(string memory feeType, uint256 rate) internal {
+if (rate > MAX_FEE_RATE) revert InvalidFeeRate(rate); // 最大 10%
+
+      bytes32 key = keccak256(bytes(feeType));
+      uint256 oldRate = feeRates[key];
+      feeRates[key] = rate;
+
+      // 记录键用于遍历
+      if (!feeRateKeyExists[key]) {
+          feeRateKeys.push(key);
+          feeRateKeyExists[key] = true;
+      }
+
+      emit FeeRateUpdated(feeType, oldRate, rate);
+
+}
+
+✅ 手续费计算 (src/event/pod/FeeVaultPod.sol:220-230)
+
+function calculateFee(uint256 amount, string calldata feeType)
+external view returns (uint256 fee) {
+bytes32 key = keccak256(bytes(feeType));
+uint256 rate = feeRates[key];
+
+      if (rate == 0) return 0;
+
+      fee = (amount * rate) / FEE_PRECISION; // rate 是基点
+
+}
+
+4. 关键技术特性
+
+1. 灵活的费率配置:
+
+
+    - 支持多种手续费类型 ("trade", "settlement", etc.)
+    - 默认 0.3% 交易手续费
+    - 最大费率限制 10%
+
+2. 完整的统计数据:
+
+
+    - 按事件统计手续费
+    - 按用户统计支付的手续费
+    - 总收取量和总提取量
+
+3. 安全保障:
+
+
+    - 仅 OrderBookPod 可收取手续费
+    - 仅 Owner 可提取手续费
+    - 重入保护 (ReentrancyGuard)
+    - 余额充足性检查
+
+4. 多 Token 支持:
+
+
+    - 支持 ETH 和 ERC20
+    - 独立统计各 Token 的手续费
+
+📈 编译结果
+
+✅ Compiling 6 files with Solc 0.8.30
+✅ Solc 0.8.30 finished in 542.55ms
+✅ Compiler run successful!
+
+📝 代码统计
+
+| 文件                       | 行数 | 类型      | 描述              |
+| -------------------------- | ---- | --------- | ----------------- |
+| IFeeVaultPod.sol           | 124  | Interface | 手续费 Pod 接口   |
+| IFeeVaultManager.sol       | 103  | Interface | 手续费管理器接口  |
+| FeeVaultPodStorage.sol     | 67   | Storage   | 手续费 Pod 存储层 |
+| FeeVaultManagerStorage.sol | 26   | Storage   | 管理器存储层      |
+| FeeVaultManager.sol        | 184  | Logic     | 管理器逻辑        |
+| FeeVaultPod.sol            | 261  | Logic     | 手续费核心逻辑    |
+| 总计                       | 765  | -         | 模块四总代码量    |
+
+🎯 功能完整度
+
+- ✅ 手续费收取: 由 OrderBookPod 调用
+- ✅ 手续费存储: 按 Token 独立存储
+- ✅ 手续费提取: Owner 权限,支持 ETH/ERC20
+- ✅ 费率管理: 灵活配置,多类型支持
+- ✅ 统计功能: 事件级和用户级统计
+- ✅ 查询接口: 余额、费率、计算
+- ✅ 安全保障: 权限控制、重入保护
+
+---
+
+模块四 (FeeVaultManager & FeeVaultPod) 已完成! 🎉
+
+手续费系统现已完整实现,可以收取、存储和管理交易手续费。接下来需要在 OrderBookPod 中集成手续费扣除逻辑,形成完整的手续费闭环!
+
+已完成模块总结:
+
+1. ✅ 模块一: EventManager & EventPod - 事件管理系统
+2. ✅ 模块二: FundingManager & FundingPod - 资金管理系统
+3. ✅ 模块三: OrderBookManager & OrderBookPod - 订单簿系统 (已集成 FundingPod)
+4. ✅ 模块四: FeeVaultManager & FeeVaultPod - 手续费管理系统
