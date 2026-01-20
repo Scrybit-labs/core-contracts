@@ -7,13 +7,21 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "./OrderBookPodStorage.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
+import "../../interfaces/event/IFundingPod.sol";
 
+/**
+ * @title OrderBookPod
+ * @notice 订单簿 Pod - 负责订单撮合和持仓管理
+ * @dev 集成 FundingPod 进行资金管理
+ */
 contract OrderBookPod is
     Initializable,
     OwnableUpgradeable,
     PausableUpgradeable,
     OrderBookPodStorage
 {
+    // ============ Modifiers ============
+
     modifier onlyOrderBookManager() {
         require(
             msg.sender == orderBookManager,
@@ -26,6 +34,8 @@ contract OrderBookPod is
         require(msg.sender == eventPod, "OrderBookPod: only eventPod");
         _;
     }
+
+    // ============ Constructor & Initializer ============
 
     constructor() {
         _disableInitializers();
@@ -47,9 +57,7 @@ contract OrderBookPod is
         orderBookManager = _orderBookManager;
     }
 
-    // ------------------------------------------------------------
-    // External
-    // ------------------------------------------------------------
+    // ============ 外部函数 External Functions ============
     function placeOrder(
         uint256 eventId,
         uint256 outcomeId,
@@ -66,8 +74,18 @@ contract OrderBookPod is
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
         if (amount == 0) revert InvalidAmount(amount);
 
-        // 资金模块：锁定下单所需资金（由资金模块实现）
-        // IFundingPod(fundingPod).lockOnOrderPlaced(msg.sender, tokenAddress, amount, eventId, outcomeId);
+        // ✅ 集成 FundingPod: 锁定下单所需资金
+        uint256 requiredAmount = side == OrderSide.Buy
+            ? (amount * price) / MAX_PRICE  // 买单锁定: amount * price
+            : amount;                        // 卖单锁定: amount (完整数量)
+
+        IFundingPod(fundingPod).lockOnOrderPlaced(
+            tx.origin,  // 真实用户(通过 OrderBookManager 调用)
+            tokenAddress,
+            requiredAmount,
+            eventId,
+            outcomeId
+        );
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
@@ -123,8 +141,18 @@ contract OrderBookPod is
         order.status = OrderStatus.Cancelled;
 
         if (order.remainingAmount > 0) {
-            // 资金模块：解锁剩余未成交资金（由资金模块实现）
-            // IFundingPod(fundingPod).unlockOnOrderCancelled(order.user, order.tokenAddress, order.remainingAmount, order.eventId, order.outcomeId);
+            // ✅ 集成 FundingPod: 解锁剩余未成交资金
+            uint256 unlockedAmount = order.side == OrderSide.Buy
+                ? (order.remainingAmount * order.price) / MAX_PRICE
+                : order.remainingAmount;
+
+            IFundingPod(fundingPod).unlockOnOrderCancelled(
+                order.user,
+                order.tokenAddress,
+                unlockedAmount,
+                order.eventId,
+                order.outcomeId
+            );
         }
 
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
@@ -302,9 +330,11 @@ contract OrderBookPod is
         sellOrder.filledAmount += matchAmount;
         sellOrder.remainingAmount -= matchAmount;
 
-        positions[buyOrder.eventId][buyOrder.outcomeId][
-            buyOrder.user
-        ] += matchAmount;
+        // ✅ 持仓管理: 记录买家持仓增加
+        positions[buyOrder.eventId][buyOrder.outcomeId][buyOrder.user] += matchAmount;
+        _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeId, buyOrder.user);
+
+        // ✅ 持仓管理: 卖家持仓减少(卖出做空)
         if (
             positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] >=
             matchAmount
@@ -318,15 +348,17 @@ contract OrderBookPod is
             ] = 0;
         }
 
-        // 资金与手续费结算交给资金模块（由资金模块实现费率与路径）
-        // IFundingPod(fundingPod).settleMatchedOrder(
-        //     buyOrder.user,
-        //     sellOrder.user,
-        //     buyOrder.tokenAddress,
-        //     matchAmount,
-        //     buyOrder.eventId,
-        //     buyOrder.outcomeId
-        // );
+        // ✅ 集成 FundingPod: 资金结算
+        IFundingPod(fundingPod).settleMatchedOrder(
+            buyOrder.user,
+            sellOrder.user,
+            buyOrder.tokenAddress,
+            matchAmount,
+            matchPrice,
+            buyOrder.eventId,
+            buyOrder.outcomeId,
+            sellOrder.outcomeId
+        );
 
         if (buyOrder.remainingAmount == 0) {
             buyOrder.status = OrderStatus.Filled;
@@ -538,8 +570,21 @@ contract OrderBookPod is
                     order.status == OrderStatus.Partial
                 ) {
                     order.status = OrderStatus.Cancelled;
-                    // 资金模块：批量撤单解锁资金（由资金模块实现）
-                    // IFundingPod(fundingPod).unlockOnOrderCancelled(order.user, order.tokenAddress, order.remainingAmount, order.eventId, order.outcomeId);
+
+                    // ✅ 集成 FundingPod: 批量撤单解锁资金
+                    if (order.remainingAmount > 0) {
+                        uint256 unlockedAmount = order.side == OrderSide.Buy
+                            ? (order.remainingAmount * order.price) / MAX_PRICE
+                            : order.remainingAmount;
+
+                        IFundingPod(fundingPod).unlockOnOrderCancelled(
+                            order.user,
+                            order.tokenAddress,
+                            unlockedAmount,
+                            order.eventId,
+                            order.outcomeId
+                        );
+                    }
                 }
             }
         }
@@ -554,18 +599,136 @@ contract OrderBookPod is
                     order.status == OrderStatus.Partial
                 ) {
                     order.status = OrderStatus.Cancelled;
-                    // 资金模块：批量撤单解锁资金（由资金模块实现）
-                    // IFundingPod(fundingPod).unlockOnOrderCancelled(order.user, order.tokenAddress, order.remainingAmount, order.eventId, order.outcomeId);
+
+                    // ✅ 集成 FundingPod: 批量撤单解锁资金
+                    if (order.remainingAmount > 0) {
+                        uint256 unlockedAmount = order.side == OrderSide.Buy
+                            ? (order.remainingAmount * order.price) / MAX_PRICE
+                            : order.remainingAmount;
+
+                        IFundingPod(fundingPod).unlockOnOrderCancelled(
+                            order.user,
+                            order.tokenAddress,
+                            unlockedAmount,
+                            order.eventId,
+                            order.outcomeId
+                        );
+                    }
                 }
             }
         }
     }
 
-    // 结算持仓（占位，待集成资金模块与用户列表）
+    // ✅ 结算持仓 - 集成 FundingPod 分配奖金
     function _settlePositions(
-        uint256 /*eventId*/,
-        uint256 /*winningOutcomeId*/
+        uint256 eventId,
+        uint256 winningOutcomeId
     ) internal {
-        // TODO: integrate settlement with FundingPod balances when user registry is available.
+        // 获取获胜结果的所有持仓者
+        address[] storage winners = positionHolders[eventId][winningOutcomeId];
+        if (winners.length == 0) return; // 没有获胜者
+
+        // 构建获胜者和持仓数组
+        uint256[] memory winningPositions = new uint256[](winners.length);
+        address tokenAddress = address(0); // 需要从订单中获取 token 地址
+
+        // 收集获胜者持仓
+        for (uint256 i = 0; i < winners.length; i++) {
+            winningPositions[i] = positions[eventId][winningOutcomeId][
+                winners[i]
+            ];
+
+            // 从该用户的订单中获取 token 地址
+            if (tokenAddress == address(0) && userOrders[winners[i]].length > 0) {
+                for (uint256 j = 0; j < userOrders[winners[i]].length; j++) {
+                    uint256 orderId = userOrders[winners[i]][j];
+                    if (orders[orderId].eventId == eventId) {
+                        tokenAddress = orders[orderId].tokenAddress;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 如果找到了 token 地址,调用 FundingPod 结算
+        if (tokenAddress != address(0)) {
+            IFundingPod(fundingPod).settleEvent(
+                eventId,
+                winningOutcomeId,
+                tokenAddress,
+                winners,
+                winningPositions
+            );
+        }
+    }
+
+    // ============ 持仓跟踪辅助函数 Position Tracking Helper ============
+
+    /**
+     * @notice 记录持仓者(避免重复记录)
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @param user 用户地址
+     */
+    function _recordPositionHolder(
+        uint256 eventId,
+        uint256 outcomeId,
+        address user
+    ) internal {
+        if (!isPositionHolder[eventId][outcomeId][user]) {
+            positionHolders[eventId][outcomeId].push(user);
+            isPositionHolder[eventId][outcomeId][user] = true;
+        }
+    }
+
+    // ============ 查询功能 View Functions ============
+
+    /**
+     * @notice 获取订单信息
+     * @param orderId 订单 ID
+     * @return order 订单详情
+     */
+    function getOrder(uint256 orderId) external view returns (Order memory order) {
+        return orders[orderId];
+    }
+
+    /**
+     * @notice 获取用户持仓
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @param user 用户地址
+     * @return position 持仓数量
+     */
+    function getPosition(
+        uint256 eventId,
+        uint256 outcomeId,
+        address user
+    ) external view returns (uint256 position) {
+        return positions[eventId][outcomeId][user];
+    }
+
+    // ============ 管理功能 Admin Functions ============
+
+    /**
+     * @notice 设置 FundingPod 地址
+     * @param _fundingPod FundingPod 地址
+     */
+    function setFundingPod(address _fundingPod) external onlyOwner {
+        require(_fundingPod != address(0), "OrderBookPod: invalid address");
+        fundingPod = _fundingPod;
+    }
+
+    /**
+     * @notice 暂停合约
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice 恢复合约
+     */
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }

@@ -170,9 +170,9 @@ EventPod.sol (src/event/pod/EventPod.sol - 357 行)
     userTokenBalances[user][token] += amount;
     eventPrizePool[eventId][token] -= amount; - settleMatchedOrder() src/event/pod/FundingPod.sol:259
     // 买家支付 = amount _ price / 10000
-    uint256 buyerPayment = (amount _ price) / PRICE_PRECISION;
-    // 卖家支付 = amount _ (10000 - price) / 10000
-    uint256 sellerPayment = (amount _ (PRICE_PRECISION - price)) / PRICE_PRECISION;
+    uint256 buyerPayment = (amount _ price) / PRICE*PRECISION;
+    // 卖家支付 = amount * (10000 - price) / 10000
+    uint256 sellerPayment = (amount \_ (PRICE_PRECISION - price)) / PRICE_PRECISION;
 
 lockedBalances[buyer][token][eventId][buyOutcomeId] -= buyerPayment;
 lockedBalances[seller][token][eventId][sellOutcomeId] += sellerPayment; - settleEvent() src/event/pod/FundingPod.sol:300
@@ -202,30 +202,6 @@ userTokenBalances[winners[i]][token] += reward;
 - ✅ 事件奖金池分离: 独立跟踪每个事件的总奖金池
 - ✅ tx.origin 使用: deposit/withdraw 中使用 tx.origin 获取真实用户地址 (代码注释中已标注需要在生产环境改进)
 
-🔧 解决的问题
-
-1. ReentrancyGuardUpgradeable 导入错误:
-
-
-    - 问题: @openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol 不存在
-    - 原因: 项目未安装 openzeppelin-contracts-upgradeable 库
-    - 解决: 使用 @openzeppelin/contracts/utils/ReentrancyGuard.sol 标准版本替代
-    - 修改文件:
-        - src/event/core/FundingManager.sol:7
-      - src/event/pod/FundingPod.sol:7
-
-2. 编译配置优化:
-
-
-    - 使用 forge build --skip test 跳过 OpenZeppelin 测试文件编译
-    - 成功编译 314 个 Solidity 文件
-
-📈 编译结果
-
-✅ Compiling 314 files with Solc 0.8.27
-✅ Solc 0.8.27 finished in 25.11s
-✅ Compiler run successful!
-
 📝 代码统计
 
 | 文件                      | 行数 | 类型      | 描述              |
@@ -249,3 +225,239 @@ userTokenBalances[winners[i]][token] += reward;
 ---
 
 模块二 (FundingManager & FundingPod) 已完成! 🎉
+
+● 📊 模块三完成总结
+
+✅ 已完成的工作
+
+1. 接口层扩展
+
+IOrderBookPod.sol - 添加了查询和管理函数:
+
+- getOrder(orderId) - 获取订单信息
+- getPosition(eventId, outcomeId, user) - 获取用户持仓
+- setFundingPod(address) - 设置 FundingPod 地址
+
+IOrderBookManager.sol (91 行) - 完整重构:
+
+- 添加事件: PodWhitelisted, PodRemovedFromWhitelist, EventRegisteredToPod
+- Pod 管理: addPodToWhitelist(), removePodFromWhitelist()
+- 查询函数: isPodWhitelisted(), getEventPod()
+- 完整的 NatSpec 文档注释
+
+2. 存储层优化
+
+OrderBookPodStorage.sol (96 行) - 重要扩展:
+
+- ⭐ 持仓跟踪: 添加 positionHolders[eventId][outcomeId] 数组用于事件结算时遍历获胜者
+- ⭐ 持仓标记: 添加 isPositionHolder 映射避免重复记录
+- 完整的代码注释和文档说明
+
+3. 业务逻辑实现
+
+OrderBookManager.sol (184 行) - 完善实现:
+
+- ✅ Pod 白名单管理 (添加/移除/查询)
+- ✅ 事件注册到 Pod
+- ✅ 下单路由
+- ✅ 撤单路由
+- ✅ 暂停/恢复控制
+- ✅ 事件通知
+
+OrderBookPod.sol (734 行) - 核心集成:
+
+✅ FundingPod 集成点 1: 下单锁定资金 (src/event/pod/OrderBookPod.sol:77-88)
+
+// 计算锁定金额: 买单锁定 amount*price, 卖单锁定 amount
+uint256 requiredAmount = side == OrderSide.Buy
+? (amount * price) / MAX_PRICE
+: amount;
+
+IFundingPod(fundingPod).lockOnOrderPlaced(
+tx.origin, // 真实用户
+tokenAddress,
+requiredAmount,
+eventId,
+outcomeId
+);
+
+✅ FundingPod 集成点 2: 撤单解锁资金 (src/event/pod/OrderBookPod.sol:143-156)
+
+if (order.remainingAmount > 0) {
+uint256 unlockedAmount = order.side == OrderSide.Buy
+? (order.remainingAmount \* order.price) / MAX_PRICE
+: order.remainingAmount;
+
+      IFundingPod(fundingPod).unlockOnOrderCancelled(
+          order.user,
+          order.tokenAddress,
+          unlockedAmount,
+          order.eventId,
+          order.outcomeId
+      );
+
+}
+
+✅ FundingPod 集成点 3: 撮合结算资金 (src/event/pod/OrderBookPod.sol:351-361)
+
+// 持仓管理: 买家持仓增加, 卖家持仓减少
+positions[buyOrder.eventId][buyOrder.outcomeId][buyOrder.user] += matchAmount;
+\_recordPositionHolder(buyOrder.eventId, buyOrder.outcomeId, buyOrder.user);
+
+// 资金结算
+IFundingPod(fundingPod).settleMatchedOrder(
+buyOrder.user,
+sellOrder.user,
+buyOrder.tokenAddress,
+matchAmount,
+matchPrice,
+buyOrder.eventId,
+buyOrder.outcomeId,
+sellOrder.outcomeId
+);
+
+✅ FundingPod 集成点 4: 批量撤单解锁 (src/event/pod/OrderBookPod.sol:574-587 & 603-616)
+
+// 事件结算时批量撤单所有挂单
+if (order.remainingAmount > 0) {
+uint256 unlockedAmount = order.side == OrderSide.Buy
+? (order.remainingAmount \* order.price) / MAX_PRICE
+: order.remainingAmount;
+
+      IFundingPod(fundingPod).unlockOnOrderCancelled(
+          order.user,
+          order.tokenAddress,
+          unlockedAmount,
+          order.eventId,
+          order.outcomeId
+      );
+
+}
+
+✅ FundingPod 集成点 5: 事件结算分配奖金 (src/event/pod/OrderBookPod.sol:623-663)
+
+function \_settlePositions(uint256 eventId, uint256 winningOutcomeId) internal {
+// 获取所有获胜者
+address[] storage winners = positionHolders[eventId][winningOutcomeId];
+if (winners.length == 0) return;
+
+      // 收集获胜者持仓
+      uint256[] memory winningPositions = new uint256[](winners.length);
+      address tokenAddress = address(0);
+
+      for (uint256 i = 0; i < winners.length; i++) {
+          winningPositions[i] = positions[eventId][winningOutcomeId][winners[i]];
+
+          // 从用户订单中获取 token 地址
+          if (tokenAddress == address(0) && userOrders[winners[i]].length > 0) {
+              for (uint256 j = 0; j < userOrders[winners[i]].length; j++) {
+                  uint256 orderId = userOrders[winners[i]][j];
+                  if (orders[orderId].eventId == eventId) {
+                      tokenAddress = orders[orderId].tokenAddress;
+                      break;
+                  }
+              }
+          }
+      }
+
+      // 调用 FundingPod 结算奖金
+      if (tokenAddress != address(0)) {
+          IFundingPod(fundingPod).settleEvent(
+              eventId,
+              winningOutcomeId,
+              tokenAddress,
+              winners,
+              winningPositions
+          );
+      }
+
+}
+
+✅ 持仓跟踪辅助函数 (src/event/pod/OrderBookPod.sol:673-682)
+
+function \_recordPositionHolder(
+uint256 eventId,
+uint256 outcomeId,
+address user
+) internal {
+if (!isPositionHolder[eventId][outcomeId][user]) {
+positionHolders[eventId][outcomeId].push(user);
+isPositionHolder[eventId][outcomeId][user] = true;
+}
+}
+
+✅ 新增查询函数:
+
+- getOrder(orderId) - 返回完整订单信息
+- getPosition(eventId, outcomeId, user) - 返回用户持仓
+- setFundingPod(address) - 动态设置 FundingPod 地址
+- pause() / unpause() - 暂停控制
+
+4. 关键技术亮点
+
+1. 完整的资金生命周期管理:
+
+
+    - 下单 → 锁定资金
+    - 撮合 → 结算资金
+    - 撤单 → 解锁资金
+    - 结算 → 分配奖金
+
+2. 精确的持仓跟踪:
+
+
+    - 买单增加持仓
+    - 卖单减少持仓
+    - 自动记录持仓者用于结算遍历
+
+3. 智能的资金锁定计算:
+
+
+    - 买单锁定: amount * price / 10000 (支付金额)
+    - 卖单锁定: amount (完整数量)
+
+4. 完整的事件结算流程:
+
+
+    - 批量撤销所有挂单
+    - 解锁未成交资金
+    - 遍历获胜者
+    - 分配奖金池
+
+📈 编译结果
+
+✅ Compiling 38 files with Solc 0.8.30
+✅ Solc 0.8.30 finished in 2.87s
+✅ Compiler run successful with warnings
+
+警告仅为 gas 优化建议(unwrapped-modifier-logic),不影响功能。
+
+📝 代码统计
+
+| 文件                        | 行数 | 类型      | 修改内容               |
+| --------------------------- | ---- | --------- | ---------------------- |
+| IOrderBookPod.sol           | 122  | Interface | +查询函数, +管理函数   |
+| IOrderBookManager.sol       | 91   | Interface | 完整重构, +事件, +查询 |
+| OrderBookPodStorage.sol     | 96   | Storage   | +持仓跟踪数据结构      |
+| OrderBookManagerStorage.sol | 13   | Storage   | 无变化                 |
+| OrderBookManager.sol        | 184  | Logic     | 完善实现, +事件通知    |
+| OrderBookPod.sol            | 734  | Logic     | 集成 FundingPod (5 处) |
+| 总计                        | 1240 | -         | 模块三总代码量         |
+
+🎯 集成完成度
+
+- ✅ 集成点 1: 下单锁定资金
+- ✅ 集成点 2: 撤单解锁资金
+- ✅ 集成点 3: 撮合结算资金
+- ✅ 集成点 4: 批量撤单解锁
+- ✅ 集成点 5: 事件结算分配奖金
+- ✅ 持仓跟踪: 完整实现
+- ✅ 查询接口: 订单和持仓查询
+
+---
+
+模块三 (OrderBookManager & OrderBookPod) 已完成! 🎉
+
+现在订单簿系统已经完全集成了资金管理系统,形成了完整的交易闭环:
+
+1. 用户入金 (FundingManager) → 下单锁定 (OrderBookPod) → 撮合结算 (OrderBookPod + FundingPod) → 事件结算 (EventPod + OrderBookPod + FundingPod) → 提现 (FundingManager)

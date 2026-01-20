@@ -93,4 +93,30 @@ interface IOrderBookPod {
         uint256 eventId,
         uint256 outcomeId
     ) external view returns (uint256 price, uint256 amount);
+
+    /**
+     * @notice 获取订单信息
+     * @param orderId 订单 ID
+     * @return order 订单详情
+     */
+    function getOrder(uint256 orderId) external view returns (Order memory order);
+
+    /**
+     * @notice 获取用户持仓
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @param user 用户地址
+     * @return position 持仓数量
+     */
+    function getPosition(
+        uint256 eventId,
+        uint256 outcomeId,
+        address user
+    ) external view returns (uint256 position);
+
+    /**
+     * @notice 设置 FundingPod 地址
+     * @param _fundingPod FundingPod 地址
+     */
+    function setFundingPod(address _fundingPod) external;
 }
