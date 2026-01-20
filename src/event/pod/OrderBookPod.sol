@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./OrderBookPodStorage.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
 import "../../interfaces/event/IFundingPod.sol";
+import "../../interfaces/event/IFeeVaultPod.sol";
 
 /**
  * @title OrderBookPod
@@ -74,10 +75,16 @@ contract OrderBookPod is
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
         if (amount == 0) revert InvalidAmount(amount);
 
-        // ✅ 集成 FundingPod: 锁定下单所需资金
+        // ✅ 计算手续费
+        uint256 fee = 0;
+        if (feeVaultPod != address(0)) {
+            fee = IFeeVaultPod(feeVaultPod).calculateFee(amount, "trade");
+        }
+
+        // ✅ 集成 FundingPod: 锁定下单所需资金 (包含手续费)
         uint256 requiredAmount = side == OrderSide.Buy
-            ? (amount * price) / MAX_PRICE  // 买单锁定: amount * price
-            : amount;                        // 卖单锁定: amount (完整数量)
+            ? ((amount + fee) * price) / MAX_PRICE  // 买单锁定: (amount + fee) * price
+            : (amount + fee);                        // 卖单锁定: amount + fee
 
         IFundingPod(fundingPod).lockOnOrderPlaced(
             tx.origin,  // 真实用户(通过 OrderBookManager 调用)
@@ -86,6 +93,17 @@ contract OrderBookPod is
             eventId,
             outcomeId
         );
+
+        // ✅ 收取手续费
+        if (fee > 0 && feeVaultPod != address(0)) {
+            IFeeVaultPod(feeVaultPod).collectFee(
+                tokenAddress,
+                tx.origin,
+                fee,
+                eventId,
+                "trade"
+            );
+        }
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
@@ -330,6 +348,12 @@ contract OrderBookPod is
         sellOrder.filledAmount += matchAmount;
         sellOrder.remainingAmount -= matchAmount;
 
+        // ✅ 计算撮合手续费
+        uint256 matchFee = 0;
+        if (feeVaultPod != address(0)) {
+            matchFee = IFeeVaultPod(feeVaultPod).calculateFee(matchAmount, "trade");
+        }
+
         // ✅ 持仓管理: 记录买家持仓增加
         positions[buyOrder.eventId][buyOrder.outcomeId][buyOrder.user] += matchAmount;
         _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeId, buyOrder.user);
@@ -359,6 +383,33 @@ contract OrderBookPod is
             buyOrder.outcomeId,
             sellOrder.outcomeId
         );
+
+        // ✅ 收取撮合手续费
+        if (matchFee > 0 && feeVaultPod != address(0)) {
+            // 买卖双方各支付一半手续费
+            uint256 buyerFee = matchFee / 2;
+            uint256 sellerFee = matchFee - buyerFee;
+
+            if (buyerFee > 0) {
+                IFeeVaultPod(feeVaultPod).collectFee(
+                    buyOrder.tokenAddress,
+                    buyOrder.user,
+                    buyerFee,
+                    buyOrder.eventId,
+                    "trade"
+                );
+            }
+
+            if (sellerFee > 0) {
+                IFeeVaultPod(feeVaultPod).collectFee(
+                    sellOrder.tokenAddress,
+                    sellOrder.user,
+                    sellerFee,
+                    sellOrder.eventId,
+                    "trade"
+                );
+            }
+        }
 
         if (buyOrder.remainingAmount == 0) {
             buyOrder.status = OrderStatus.Filled;
@@ -716,6 +767,15 @@ contract OrderBookPod is
     function setFundingPod(address _fundingPod) external onlyOwner {
         require(_fundingPod != address(0), "OrderBookPod: invalid address");
         fundingPod = _fundingPod;
+    }
+
+    /**
+     * @notice 设置 FeeVaultPod 地址
+     * @param _feeVaultPod FeeVaultPod 地址
+     */
+    function setFeeVaultPod(address _feeVaultPod) external onlyOwner {
+        require(_feeVaultPod != address(0), "OrderBookPod: invalid address");
+        feeVaultPod = _feeVaultPod;
     }
 
     /**

@@ -485,7 +485,7 @@ bytes calldata proof
 
 📝 服务组件
 
-- 事件监听与索引服务(Rust/Node.js)
+- 事件监听与索引服务(GO)
 - REST API 服务器
 - WebSocket 推送服务
 - 数据库(PostgreSQL 推荐)

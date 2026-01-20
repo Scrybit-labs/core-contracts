@@ -591,31 +591,27 @@ uint256 rate = feeRates[key];
 
 1. 灵活的费率配置:
 
+   - 支持多种手续费类型 ("trade", "settlement", etc.)
+   - 默认 0.3% 交易手续费
+   - 最大费率限制 10%
 
-    - 支持多种手续费类型 ("trade", "settlement", etc.)
-    - 默认 0.3% 交易手续费
-    - 最大费率限制 10%
+1. 完整的统计数据:
 
-2. 完整的统计数据:
+   - 按事件统计手续费
+   - 按用户统计支付的手续费
+   - 总收取量和总提取量
 
+1. 安全保障:
 
-    - 按事件统计手续费
-    - 按用户统计支付的手续费
-    - 总收取量和总提取量
+   - 仅 OrderBookPod 可收取手续费
+   - 仅 Owner 可提取手续费
+   - 重入保护 (ReentrancyGuard)
+   - 余额充足性检查
 
-3. 安全保障:
+1. 多 Token 支持:
 
-
-    - 仅 OrderBookPod 可收取手续费
-    - 仅 Owner 可提取手续费
-    - 重入保护 (ReentrancyGuard)
-    - 余额充足性检查
-
-4. 多 Token 支持:
-
-
-    - 支持 ETH 和 ERC20
-    - 独立统计各 Token 的手续费
+   - 支持 ETH 和 ERC20
+   - 独立统计各 Token 的手续费
 
 📈 编译结果
 
@@ -657,3 +653,310 @@ uint256 rate = feeRates[key];
 2. ✅ 模块二: FundingManager & FundingPod - 资金管理系统
 3. ✅ 模块三: OrderBookManager & OrderBookPod - 订单簿系统 (已集成 FundingPod)
 4. ✅ 模块四: FeeVaultManager & FeeVaultPod - 手续费管理系统
+
+📊 补充：FeeVaultPod 集成完成总结
+
+✅ 集成完成的工作
+
+1. OrderBookPod 中的手续费集成点
+
+✅ 集成点 1: 导入 FeeVaultPod 接口 (src/event/pod/OrderBookPod.sol:11)
+
+import "../../interfaces/event/IFeeVaultPod.sol";
+
+✅ 集成点 2: 下单时计算并扣除手续费 (src/event/pod/OrderBookPod.sol:78-106)
+
+// 计算手续费
+uint256 fee = 0;
+if (feeVaultPod != address(0)) {
+fee = IFeeVaultPod(feeVaultPod).calculateFee(amount, "trade");
+}
+
+// 锁定资金 (包含手续费)
+uint256 requiredAmount = side == OrderSide.Buy
+? ((amount + fee) _ price) / MAX_PRICE // 买单: (数量 + 手续费) _ 价格
+: (amount + fee); // 卖单: 数量 + 手续费
+
+IFundingPod(fundingPod).lockOnOrderPlaced(
+tx.origin,
+tokenAddress,
+requiredAmount,
+eventId,
+outcomeId
+);
+
+// 收取手续费
+if (fee > 0 && feeVaultPod != address(0)) {
+IFeeVaultPod(feeVaultPod).collectFee(
+tokenAddress,
+tx.origin,
+fee,
+eventId,
+"trade"
+);
+}
+
+关键逻辑:
+
+- 下单时先计算手续费
+- 锁定的资金包含交易数量 + 手续费
+- 立即收取手续费到 FeeVaultPod
+
+✅ 集成点 3: 撮合时收取手续费 (src/event/pod/OrderBookPod.sol:351-412)
+
+// 计算撮合手续费
+uint256 matchFee = 0;
+if (feeVaultPod != address(0)) {
+matchFee = IFeeVaultPod(feeVaultPod).calculateFee(matchAmount, "trade");
+}
+
+// ... 持仓管理和资金结算 ...
+
+// 收取撮合手续费 (买卖双方各付一半)
+if (matchFee > 0 && feeVaultPod != address(0)) {
+uint256 buyerFee = matchFee / 2;
+uint256 sellerFee = matchFee - buyerFee;
+
+      if (buyerFee > 0) {
+          IFeeVaultPod(feeVaultPod).collectFee(
+              buyOrder.tokenAddress,
+              buyOrder.user,
+              buyerFee,
+              buyOrder.eventId,
+              "trade"
+          );
+      }
+
+      if (sellerFee > 0) {
+          IFeeVaultPod(feeVaultPod).collectFee(
+              sellOrder.tokenAddress,
+              sellOrder.user,
+              sellerFee,
+              sellOrder.eventId,
+              "trade"
+          );
+      }
+
+}
+
+关键逻辑:
+
+- 订单撮合时计算手续费
+- 买卖双方各支付一半手续费
+- 确保公平性
+
+✅ 集成点 4: 管理函数 (src/event/pod/OrderBookPod.sol:772-779)
+
+/\*\*
+
+- @notice 设置 FeeVaultPod 地址
+- @param \_feeVaultPod FeeVaultPod 地址
+  \*/
+  function setFeeVaultPod(address \_feeVaultPod) external onlyOwner {
+  require(\_feeVaultPod != address(0), "OrderBookPod: invalid address");
+  feeVaultPod = \_feeVaultPod;
+  }
+
+🔄 完整的交易流程
+
+用户下单流程:
+
+1. 用户调用 OrderBookManager.placeOrder()
+2. Manager 路由到 OrderBookPod.placeOrder()
+3. OrderBookPod 计算手续费
+4. 锁定资金 = 交易金额 + 手续费 (通过 FundingPod)
+5. 收取手续费 (通过 FeeVaultPod)
+6. 创建订单并尝试撮合
+
+订单撮合流程:
+
+1. OrderBookPod 找到匹配的买卖单
+2. 计算成交数量和价格
+3. 计算撮合手续费
+4. 更新持仓
+5. 结算资金 (通过 FundingPod)
+6. 买卖双方各支付一半手续费 (通过 FeeVaultPod)
+
+手续费提取流程:
+
+1. Owner 调用 FeeVaultManager.withdrawFee()
+2. Manager 路由到 FeeVaultPod.withdrawFee()
+3. FeeVaultPod 检查余额
+4. 转账 ETH 或 ERC20 到接收者
+
+📈 编译结果
+
+✅ Compiling 1 files with Solc 0.8.30
+✅ Solc 0.8.30 finished in 1.09s
+✅ Compiler run successful!
+
+🎯 集成特性
+
+1. 灵活的手续费配置:
+
+   - 可动态设置费率
+   - 默认 0.3% 交易手续费
+   - 支持禁用手续费 (feeVaultPod = address(0))
+
+2. 公平的费用分摊:
+
+   - 下单时: 由下单方支付
+   - 撮合时: 买卖双方各付一半
+
+3. 完整的统计:
+
+   - 按事件统计手续费
+   - 按用户统计支付的手续费
+   - 总收取量记录
+
+4. 安全保障:
+
+   - 空地址检查 (允许不设置 FeeVaultPod)
+   - 仅 OrderBookPod 可收取手续费
+   - 仅 Owner 可提取手续费
+
+📝 代码修改统计
+
+| 文件             | 修改内容               | 位置          |
+| ---------------- | ---------------------- | ------------- |
+| OrderBookPod.sol | 添加 IFeeVaultPod 导入 | 第 11 行      |
+| OrderBookPod.sol | 下单时计算并收取手续费 | 第 78-106 行  |
+| OrderBookPod.sol | 撮合时收取手续费       | 第 351-412 行 |
+| OrderBookPod.sol | 添加 setFeeVaultPod()  | 第 772-779 行 |
+
+---
+
+✅ 模块五开发完成: AdminFeeVault (平台级费用金库)
+
+📋 文件清单
+
+1. src/interfaces/admin/IAdminFeeVault.sol (171 行)
+
+
+    - 完整的平台级费用金库接口
+    - 5 个事件: FeeCollected, FeeDistributed, FeeWithdrawn, BeneficiaryUpdated, AllocationRatioUpdated
+    - 5 个自定义错误
+    - 7 个核心函数 + 5 个查询函数
+
+2. src/admin/AdminFeeVaultStorage.sol (73 行)
+
+
+    - 存储层实现
+    - 授权管理: authorizedPods 映射和列表
+    - 受益人配置: beneficiaries, allocationRatios, beneficiaryRoles
+    - 手续费余额: feeBalances, pendingDistribution, beneficiaryBalances
+    - 统计数据: totalCollected, totalDistributed, totalWithdrawn, collectedByCategory
+    - 常量: RATIO_PRECISION = 10000, MAX_TOTAL_RATIO = 10000
+
+3. src/admin/AdminFeeVault.sol (363 行)
+
+
+    - 完整实现所有核心功能
+    - 默认受益人配置: treasury 50%, team 30%, liquidity 20%
+    - 支持 ETH 和 ERC20 代币
+
+🎯 核心功能
+
+1️⃣ 费用收集 (collectFeeFromPod)
+
+function collectFeeFromPod(address token, uint256 amount, string calldata category)
+
+- 从授权的 FeeVaultPod 收集手续费
+- 更新总余额、待分配余额、总收集量
+- 按类别统计手续费(trade, settlement, etc.)
+- 仅授权的 Pod 可调用
+
+2️⃣ 费用分配 (distributeFees)
+
+function distributeFees(address token)
+
+- 将待分配余额按比例分配给受益人
+- 遍历所有受益人角色,按 allocationRatios 计算分配额
+- 更新 beneficiaryBalances 和 totalDistributed
+- 任何人都可以调用(触发分配)
+
+3️⃣ 费用提取 (withdraw)
+
+function withdraw(address token, address recipient, uint256 amount)
+
+- 受益人提取自己的已分配份额
+- 检查 beneficiaryBalances[msg.sender][token] 余额
+- 支持 ETH 和 ERC20 提取
+- 使用 ReentrancyGuard 防重入
+
+4️⃣ 受益人管理
+
+function setBeneficiary(string calldata role, address beneficiary)
+function setAllocationRatio(string calldata role, uint256 ratio)
+
+- 配置不同角色的受益人地址
+- 设置分配比例(基点制: 0-10000)
+- 验证总比例不超过 100%
+- 仅 Owner 可调用
+
+5️⃣ Pod 授权管理
+
+function addAuthorizedPod(address pod)
+function removeAuthorizedPod(address pod)
+
+- 白名单管理:只有授权的 FeeVaultPod 可以上缴手续费
+- 维护 authorizedPods 映射和 authorizedPodsList 数组
+- 仅 Owner 可调用
+
+📊 编译结果
+
+✅ Compiling 3 files with Solc 0.8.30
+✅ Solc 0.8.30 finished in 391.07ms
+✅ Compiler run successful!
+
+🔧 修复的问题
+
+- 导入路径错误: 修正了 AdminFeeVaultStorage.sol 中的导入路径
+  - 错误: import "../../interfaces/admin/IAdminFeeVault.sol";
+  - 正确: import "../interfaces/admin/IAdminFeeVault.sol";
+
+📈 模块统计
+
+- 接口: 171 行
+- 存储层: 73 行
+- 核心逻辑: 363 行
+- 总计: 607 行代码
+
+🎨 设计亮点
+
+1. 灵活的受益人系统:
+
+
+    - 支持任意数量的受益人角色(treasury, team, liquidity, etc.)
+    - 可动态调整分配比例
+    - 自动验证总比例不超过 100%
+
+2. 两阶段资金流转:
+
+
+    - 第一阶段: FeeVaultPod → AdminFeeVault (collectFeeFromPod)
+    - 第二阶段: 待分配 → 受益人余额 (distributeFees)
+    - 第三阶段: 受益人余额 → 提取 (withdraw)
+
+3. 精细的统计追踪:
+
+
+    - 按 Token 统计: totalCollected, totalDistributed, totalWithdrawn
+    - 按类别统计: collectedByCategory
+    - 按受益人统计: beneficiaryBalances
+
+4. 安全性保障:
+
+
+    - Pod 授权白名单机制
+    - ReentrancyGuard 防重入攻击
+    - OwnableUpgradeable 权限管理
+    - PausableUpgradeable 紧急暂停
+
+🔗 下一步集成建议
+
+AdminFeeVault 已经准备就绪,后续可能需要:
+
+1. 在 FeeVaultPod 中添加 transferToAdminVault() 函数
+2. 让 FeeVaultPod 定期向 AdminFeeVault 上缴手续费
+3. 编写测试用例验证完整的手续费流转链路
