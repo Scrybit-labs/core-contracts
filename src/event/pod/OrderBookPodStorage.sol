@@ -30,8 +30,7 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
 
     mapping(uint256 => EventOrderBook) internal eventOrderBooks;
 
-    mapping(uint256 => mapping(uint256 => mapping(address => uint256)))
-        public positions;
+    mapping(uint256 => mapping(uint256 => mapping(address => uint256))) public positions;
 
     uint256 public constant TICK_SIZE = 10;
     uint256 public constant MAX_PRICE = 10000;
@@ -39,5 +38,5 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
     mapping(uint256 => bool) public eventSettled;
     mapping(uint256 => uint256) public eventResults;
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }

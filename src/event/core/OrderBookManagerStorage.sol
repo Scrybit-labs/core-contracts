@@ -9,5 +9,5 @@ abstract contract OrderBookManagerStorage is IOrderBookManager {
 
     mapping(uint256 => IOrderBookPod) public eventIdToPod;
 
-    uint256[99] private __gap;
+    uint256[99] private _gap;
 }

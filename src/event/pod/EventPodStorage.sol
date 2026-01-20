@@ -37,5 +37,5 @@ abstract contract EventPodStorage is IEventPod {
 
     /// @notice 预留升级空间(OpenZeppelin 升级模式)
     /// @dev 减去已使用的 slot 数量: 8 个映射/变量 = 8 slots
-    uint256[42] private __gap;
+    uint256[42] private _gap;
 }

@@ -35,5 +35,5 @@ abstract contract EventManagerStorage is IEventManager {
 
     /// @notice 预留升级空间(OpenZeppelin 升级模式)
     /// @dev 减去已使用的 slot 数量: 7 个映射/变量 = 7 slots
-    uint256[43] private __gap;
+    uint256[43] private _gap;
 }
