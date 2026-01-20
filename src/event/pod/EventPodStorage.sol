@@ -3,8 +3,39 @@ pragma solidity ^0.8.20;
 
 import "../../interfaces/event/IEventPod.sol";
 
+/**
+ * @title EventPodStorage
+ * @notice EventPod 的存储层合约
+ * @dev 存储与逻辑分离,便于合约升级
+ */
 abstract contract EventPodStorage is IEventPod {
-    constructor(){
+    // ============ 状态变量 State Variables ============
 
-    }
+    /// @notice 事件存储映射: eventId => Event
+    mapping(uint256 => Event) internal events;
+
+    /// @notice 事件结果选项映射: eventId => outcomeId => Outcome
+    mapping(uint256 => mapping(uint256 => Outcome)) internal outcomes;
+
+    /// @notice 事件是否存在映射
+    mapping(uint256 => bool) public eventExists;
+
+    /// @notice 活跃事件 ID 数组
+    uint256[] internal activeEventIds;
+
+    /// @notice 事件在活跃数组中的索引映射
+    mapping(uint256 => uint256) internal activeEventIndex;
+
+    /// @notice 事件是否在活跃列表中
+    mapping(uint256 => bool) internal isEventActive;
+
+    /// @notice EventManager 合约地址
+    address public eventManager;
+
+    /// @notice OrderBookManager 合约地址(用于触发结算)
+    address public orderBookManager;
+
+    /// @notice 预留升级空间(OpenZeppelin 升级模式)
+    /// @dev 减去已使用的 slot 数量: 8 个映射/变量 = 8 slots
+    uint256[42] private __gap;
 }
