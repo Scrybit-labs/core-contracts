@@ -35,7 +35,10 @@ abstract contract EventPodStorage is IEventPod {
     /// @notice OrderBookManager 合约地址(用于触发结算)
     address public orderBookManager;
 
+    /// @notice OracleAdapter 合约地址(用于验证预言机)
+    address public oracleAdapter;
+
     /// @notice 预留升级空间(OpenZeppelin 升级模式)
-    /// @dev 减去已使用的 slot 数量: 8 个映射/变量 = 8 slots
-    uint256[42] private _gap;
+    /// @dev 减去已使用的 slot 数量: 9 个映射/变量 = 9 slots
+    uint256[41] private _gap;
 }

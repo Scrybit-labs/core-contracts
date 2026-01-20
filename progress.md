@@ -832,28 +832,25 @@ uint256 sellerFee = matchFee - buyerFee;
 
 1. src/interfaces/admin/IAdminFeeVault.sol (171 行)
 
-
-    - 完整的平台级费用金库接口
-    - 5 个事件: FeeCollected, FeeDistributed, FeeWithdrawn, BeneficiaryUpdated, AllocationRatioUpdated
-    - 5 个自定义错误
-    - 7 个核心函数 + 5 个查询函数
+   - 完整的平台级费用金库接口
+   - 5 个事件: FeeCollected, FeeDistributed, FeeWithdrawn, BeneficiaryUpdated, AllocationRatioUpdated
+   - 5 个自定义错误
+   - 7 个核心函数 + 5 个查询函数
 
 2. src/admin/AdminFeeVaultStorage.sol (73 行)
 
-
-    - 存储层实现
-    - 授权管理: authorizedPods 映射和列表
-    - 受益人配置: beneficiaries, allocationRatios, beneficiaryRoles
-    - 手续费余额: feeBalances, pendingDistribution, beneficiaryBalances
-    - 统计数据: totalCollected, totalDistributed, totalWithdrawn, collectedByCategory
-    - 常量: RATIO_PRECISION = 10000, MAX_TOTAL_RATIO = 10000
+   - 存储层实现
+   - 授权管理: authorizedPods 映射和列表
+   - 受益人配置: beneficiaries, allocationRatios, beneficiaryRoles
+   - 手续费余额: feeBalances, pendingDistribution, beneficiaryBalances
+   - 统计数据: totalCollected, totalDistributed, totalWithdrawn, collectedByCategory
+   - 常量: RATIO_PRECISION = 10000, MAX_TOTAL_RATIO = 10000
 
 3. src/admin/AdminFeeVault.sol (363 行)
 
-
-    - 完整实现所有核心功能
-    - 默认受益人配置: treasury 50%, team 30%, liquidity 20%
-    - 支持 ETH 和 ERC20 代币
+   - 完整实现所有核心功能
+   - 默认受益人配置: treasury 50%, team 30%, liquidity 20%
+   - 支持 ETH 和 ERC20 代币
 
 🎯 核心功能
 
@@ -926,32 +923,28 @@ function removeAuthorizedPod(address pod)
 
 1. 灵活的受益人系统:
 
-
-    - 支持任意数量的受益人角色(treasury, team, liquidity, etc.)
-    - 可动态调整分配比例
-    - 自动验证总比例不超过 100%
+   - 支持任意数量的受益人角色(treasury, team, liquidity, etc.)
+   - 可动态调整分配比例
+   - 自动验证总比例不超过 100%
 
 2. 两阶段资金流转:
 
-
-    - 第一阶段: FeeVaultPod → AdminFeeVault (collectFeeFromPod)
-    - 第二阶段: 待分配 → 受益人余额 (distributeFees)
-    - 第三阶段: 受益人余额 → 提取 (withdraw)
+   - 第一阶段: FeeVaultPod → AdminFeeVault (collectFeeFromPod)
+   - 第二阶段: 待分配 → 受益人余额 (distributeFees)
+   - 第三阶段: 受益人余额 → 提取 (withdraw)
 
 3. 精细的统计追踪:
 
-
-    - 按 Token 统计: totalCollected, totalDistributed, totalWithdrawn
-    - 按类别统计: collectedByCategory
-    - 按受益人统计: beneficiaryBalances
+   - 按 Token 统计: totalCollected, totalDistributed, totalWithdrawn
+   - 按类别统计: collectedByCategory
+   - 按受益人统计: beneficiaryBalances
 
 4. 安全性保障:
 
-
-    - Pod 授权白名单机制
-    - ReentrancyGuard 防重入攻击
-    - OwnableUpgradeable 权限管理
-    - PausableUpgradeable 紧急暂停
+   - Pod 授权白名单机制
+   - ReentrancyGuard 防重入攻击
+   - OwnableUpgradeable 权限管理
+   - PausableUpgradeable 紧急暂停
 
 🔗 下一步集成建议
 
@@ -960,3 +953,196 @@ AdminFeeVault 已经准备就绪,后续可能需要:
 1. 在 FeeVaultPod 中添加 transferToAdminVault() 函数
 2. 让 FeeVaultPod 定期向 AdminFeeVault 上缴手续费
 3. 编写测试用例验证完整的手续费流转链路
+
+● ✅ 模块六开发完成: 预言机集成 (Oracle Integration)
+
+📋 文件清单
+
+1. 预言机接口 (136 行)
+
+src/interfaces/oracle/IOracle.sol
+
+- IOracle 接口: 定义预言机核心功能
+  - 事件: ResultRequested, ResultSubmitted, ResultConfirmed
+  - 核心函数: requestEventResult, submitResult, cancelRequest
+  - 查询函数: getRequest, getEventResult
+- IOracleConsumer 接口: 定义预言机消费者接口
+  - fulfillResult: 接收预言机结果回调
+
+2. 预言机适配器
+
+src/oracle/OracleAdapterStorage.sol (93 行)
+
+- OracleRequest 结构体: 请求信息存储
+- 请求映射: requests, eventIdToRequestId, eventResults
+- 授权管理: authorizedOracles, oracleReputation
+- 配置参数: requestTimeout (7 天), minConfirmations (1)
+- 统计数据: totalRequests, fulfilledRequests, oracleSubmissions
+
+src/oracle/OracleAdapter.sol (381 行)
+
+- 核心功能实现:
+  - requestEventResult(): 创建事件结果请求
+  - submitResult(): 提交事件结果(仅授权预言机)
+  - cancelRequest(): 取消请求
+  - \_verifyProof(): 验证证明数据(预留实现)
+  - \_fulfillConsumer(): 回调 OracleConsumer
+- 管理功能:
+  - addAuthorizedOracle / removeAuthorizedOracle
+  - setEventManager / setOracleConsumer
+  - setRequestTimeout / setMinConfirmations
+
+3. 预言机管理器
+
+src/interfaces/oracle/IOracleManager.sol (94 行)
+
+- 适配器管理接口
+- 预言机授权接口
+- 查询功能接口
+
+src/oracle/OracleManagerStorage.sol (64 行)
+
+- AdapterInfo 结构体
+- 适配器映射和列表
+- 预言机授权映射
+- 统计数据
+
+src/oracle/OracleManager.sol (253 行)
+
+- 适配器生命周期管理:
+  - addOracleAdapter / removeOracleAdapter
+  - setDefaultAdapter
+- 预言机授权管理:
+  - authorizeOracle / unauthorizeOracle
+  - 自动调用适配器的授权函数
+- 查询功能:
+  - getDefaultAdapter
+  - isAdapterRegistered
+  - getAllAdapters
+  - getOracleAdapters
+
+4. EventPod 集成
+
+修改 src/event/pod/EventPodStorage.sol
+
+- 添加 oracleAdapter 地址字段
+
+修改 src/event/pod/EventPod.sol
+
+- 实现 IOracleConsumer 接口
+- 添加 fulfillResult() 函数 - IOracleConsumer 接口实现
+- 保留 settleEvent() 函数 - IEventPod 接口实现
+- 添加 \_settleEvent() 内部函数 - 共享结算逻辑
+- 修改 onlyAuthorizedOracle 修饰符: 验证调用者为 oracleAdapter
+- 添加 setOracleAdapter() 管理函数
+
+🎯 核心功能
+
+1️⃣ 请求事件结果
+
+function requestEventResult(uint256 eventId, string calldata eventDescription)
+returns (bytes32 requestId)
+
+- 由 EventManager 调用
+- 生成唯一请求 ID
+- 记录请求信息
+- 发出 ResultRequested 事件
+
+2️⃣ 提交事件结果
+
+function submitResult(
+bytes32 requestId,
+uint256 eventId,
+uint256 winningOutcomeId,
+bytes calldata proof
+) external onlyAuthorizedOracle
+
+- 仅授权预言机可调用
+- 验证请求存在、未超时、未完成
+- 可选验证证明数据
+- 更新结果并回调 OracleConsumer
+- 更新预言机信誉分数
+
+3️⃣ 回调 EventPod
+
+function fulfillResult(
+uint256 eventId,
+uint256 winningOutcomeId,
+bytes calldata proof
+) external override onlyAuthorizedOracle
+
+- 实现 IOracleConsumer 接口
+- 验证调用者为 OracleAdapter
+- 验证事件状态和结算时间
+- 验证获胜结果有效性
+- 调用 OrderBookPod 结算
+
+4️⃣ 预言机管理
+
+- OracleManager 统一管理多个 OracleAdapter
+- 支持默认适配器配置
+- 预言机授权到指定适配器
+- 预言机信誉评分系统
+
+📊 编译结果
+
+✅ Compiling 8 files with Solc 0.8.30
+✅ Solc 0.8.30 finished in 1.35s
+✅ Compiler run successful with warnings
+
+🔧 关键设计
+
+1. 三层架构:
+
+
+    - OracleManager: 顶层管理器,管理多个适配器
+    - OracleAdapter: 中间层适配器,管理请求和结果
+    - EventPod: 消费者层,接收并处理结果
+
+2. 双接口实现:
+
+
+    - EventPod 同时实现 IEventPod 和 IOracleConsumer
+    - settleEvent() 和 fulfillResult() 都调用内部 _settleEvent()
+    - 保持向后兼容性
+
+3. 安全机制:
+
+
+    - 预言机白名单授权
+    - 请求超时机制(默认7天)
+    - 证明验证框架(预留实现)
+    - 重复提交防护
+
+4. 灵活性:
+
+
+    - 支持多预言机适配器
+    - 可配置超时时间和确认数
+    - 预言机信誉评分系统
+    - 回调失败不影响结果记录
+
+📈 模块统计
+
+- 接口: 136 行 (IOracle.sol) + 94 行 (IOracleManager.sol) = 230 行
+- 存储层: 93 行 (OracleAdapterStorage.sol) + 64 行 (OracleManagerStorage.sol) = 157 行
+- 核心逻辑: 381 行 (OracleAdapter.sol) + 253 行 (OracleManager.sol) = 634 行
+- EventPod 集成: ~50 行修改
+- 总计: 1021 行代码
+
+🔗 工作流程
+
+1. 请求阶段: EventManager → OracleAdapter.requestEventResult()
+2. 链下处理: 预言机服务监听 ResultRequested 事件
+3. 结果提交: 预言机 → OracleAdapter.submitResult()
+4. 回调处理: OracleAdapter → EventPod.fulfillResult()
+5. 事件结算: EventPod → OrderBookPod.settleEvent()
+
+🎨 扩展性
+
+预留的扩展点:
+
+- \_verifyProof(): 可实现签名验证、Merkle Proof 等
+- minConfirmations: 支持多预言机共识
+- oracleReputation: 预言机信誉评分和惩罚机制
+- 多适配器支持: 可对接不同的预言机网络

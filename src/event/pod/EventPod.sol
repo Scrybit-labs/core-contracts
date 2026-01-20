@@ -8,13 +8,14 @@ import "./EventPodStorage.sol";
 import "../../interfaces/event/IEventPod.sol";
 import "../../interfaces/event/IOrderBookManager.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
+import "../../interfaces/oracle/IOracle.sol";
 
 /**
  * @title EventPod
  * @notice 事件 Pod - 负责独立处理一组事件的执行单元
  * @dev 每个 EventPod 独立管理一组事件,实现事件隔离和横向扩展
  */
-contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage {
+contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracleConsumer {
     // ============ Modifiers ============
 
     /// @notice 仅 EventManager 可调用
@@ -23,10 +24,9 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage {
         _;
     }
 
-    /// @notice 仅授权的预言机可调用(通过 EventManager 验证)
+    /// @notice 仅授权的预言机可调用
     modifier onlyAuthorizedOracle() {
-        // 预言机权限由 EventManager 管理
-        // 这里通过 eventManager 检查,或直接在 settleEvent 中调用 eventManager 验证
+        require(msg.sender == oracleAdapter, "EventPod: only authorized oracle adapter");
         _;
     }
 
@@ -159,18 +159,44 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage {
     }
 
     /**
-     * @notice 接收预言机结果并结算事件
+     * @notice 接收预言机结果并结算事件 (实现 IOracleConsumer 接口)
      * @param eventId 事件 ID
      * @param winningOutcomeId 获胜结果 ID
-     * @param proof 预言机证明数据(当前未使用,预留)
+     * @param proof 预言机证明数据
+     */
+    function fulfillResult(
+        uint256 eventId,
+        uint256 winningOutcomeId,
+        bytes calldata proof
+    ) external override onlyAuthorizedOracle eventMustExist(eventId) {
+        _settleEvent(eventId, winningOutcomeId, proof);
+    }
+
+    /**
+     * @notice 结算事件 (实现 IEventPod 接口,兼容层)
+     * @param eventId 事件 ID
+     * @param winningOutcomeId 获胜结果 ID
+     * @param proof 预言机证明数据
      */
     function settleEvent(
         uint256 eventId,
         uint256 winningOutcomeId,
         bytes calldata proof
-    ) external eventMustExist(eventId) {
-        // 注意: 这里应该验证调用者是授权的预言机
-        // 暂时允许任何人调用(测试阶段),生产环境需要严格验证
+    ) external override onlyAuthorizedOracle eventMustExist(eventId) {
+        _settleEvent(eventId, winningOutcomeId, proof);
+    }
+
+    /**
+     * @notice 内部函数: 结算事件逻辑
+     * @param eventId 事件 ID
+     * @param winningOutcomeId 获胜结果 ID
+     * @param proof 预言机证明数据
+     */
+    function _settleEvent(
+        uint256 eventId,
+        uint256 winningOutcomeId,
+        bytes calldata proof
+    ) internal {
         Event storage evt = events[eventId];
 
         require(evt.status == EventStatus.Active, "EventPod: event not active");
@@ -344,5 +370,14 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage {
     function setEventManager(address _eventManager) external onlyOwner {
         require(_eventManager != address(0), "EventPod: invalid address");
         eventManager = _eventManager;
+    }
+
+    /**
+     * @notice 设置 OracleAdapter 地址
+     * @param _oracleAdapter OracleAdapter 地址
+     */
+    function setOracleAdapter(address _oracleAdapter) external onlyOwner {
+        require(_oracleAdapter != address(0), "EventPod: invalid address");
+        oracleAdapter = _oracleAdapter;
     }
 }
