@@ -280,9 +280,14 @@ contract FundingPod is
         // 为了简化,我们假设卖家的资金锁定在同一个 outcome 上
         lockedBalances[seller][token][eventId][sellOutcomeId] += sellerPayment;
 
-        // 持仓变化在 OrderBookPod 中处理,这里只处理资金
+        // 更新卖家的事件总锁定额
+        userEventTotalLocked[seller][token][eventId] += sellerPayment;
 
-        // 注意: 奖金池不变,因为资金只是在买卖双方之间转移,总锁定额不变
+        // 卖家支付的金额加入奖金池
+        // 买家的支付在下单时已经加入奖金池,这里只需加入卖家的部分
+        eventPrizePool[eventId][token] += sellerPayment;
+
+        // 持仓变化在 OrderBookPod 中处理,这里只处理资金
 
         emit OrderSettled(0, 0, amount, token); // orderIds 由 OrderBookPod 提供
     }
@@ -328,15 +333,27 @@ contract FundingPod is
 
             if (position == 0) continue;
 
-            // 计算该获胜者应得的奖金
+            // 计算该获胜者应得的奖金 (按持仓比例瓜分整个奖金池)
+            // 在预测市场中: reward = position * 每份价值(1 单位token)
+            // 奖金池分配比例: reward = (prizePool * position) / totalWinningPositions
             uint256 reward = (prizePool * position) / totalWinningPositions;
 
-            // 解锁获胜者的锁定资金并转到可用余额
-            uint256 locked = lockedBalances[winner][token][eventId][winningOutcomeId];
+            // 清零获胜者在获胜结果上的锁定资金
+            // 注意: locked 读取后不直接使用,因为 reward 已经按持仓比例计算
+            // 但我们需要清零以防止重复提取
+            uint256 lockedInWinningOutcome = lockedBalances[winner][token][eventId][winningOutcomeId];
             lockedBalances[winner][token][eventId][winningOutcomeId] = 0;
-            userEventTotalLocked[winner][token][eventId] = 0;
 
-            // 奖金 = 解锁资金 + 按比例分配的额外奖金
+            // 减少用户在该事件的总锁定额 (只减去获胜结果的锁定)
+            if (userEventTotalLocked[winner][token][eventId] >= lockedInWinningOutcome) {
+                userEventTotalLocked[winner][token][eventId] -= lockedInWinningOutcome;
+            } else {
+                // 防御性编程: 如果出现异常,直接清零
+                userEventTotalLocked[winner][token][eventId] = 0;
+            }
+
+            // 将奖金转入可用余额
+            // reward 已经包含了获胜者应得的全部金额 (本金 + 分得的输家资金)
             userTokenBalances[winner][token] += reward;
         }
 

@@ -60,6 +60,7 @@ contract OrderBookPod is
 
     // ============ 外部函数 External Functions ============
     function placeOrder(
+        address user,
         uint256 eventId,
         uint256 outcomeId,
         OrderSide side,
@@ -67,6 +68,7 @@ contract OrderBookPod is
         uint256 amount,
         address tokenAddress
     ) external whenNotPaused onlyOrderBookManager returns (uint256 orderId) {
+        require(user != address(0), "OrderBookPod: invalid user address");
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
         if (!supportedOutcomes[eventId][outcomeId])
             revert OutcomeNotSupported(eventId, outcomeId);
@@ -87,7 +89,7 @@ contract OrderBookPod is
             : (amount + fee);                        // 卖单锁定: amount + fee
 
         IFundingPod(fundingPod).lockOnOrderPlaced(
-            tx.origin,  // 真实用户(通过 OrderBookManager 调用)
+            user,  // 使用传入的真实用户地址
             tokenAddress,
             requiredAmount,
             eventId,
@@ -98,7 +100,7 @@ contract OrderBookPod is
         if (fee > 0 && feeVaultPod != address(0)) {
             IFeeVaultPod(feeVaultPod).collectFee(
                 tokenAddress,
-                tx.origin,
+                user,  // 使用传入的真实用户地址
                 fee,
                 eventId,
                 "trade"
@@ -108,7 +110,7 @@ contract OrderBookPod is
         orderId = nextOrderId++;
         orders[orderId] = Order({
             orderId: orderId,
-            user: msg.sender,
+            user: user,  // 使用传入的真实用户地址
             eventId: eventId,
             outcomeId: outcomeId,
             side: side,
@@ -120,7 +122,7 @@ contract OrderBookPod is
             timestamp: block.timestamp,
             tokenAddress: tokenAddress
         });
-        userOrders[msg.sender].push(orderId);
+        userOrders[user].push(orderId);
 
         _matchOrder(orderId);
 
@@ -133,7 +135,7 @@ contract OrderBookPod is
 
         emit OrderPlaced(
             orderId,
-            msg.sender,
+            user,  // 使用传入的真实用户地址
             eventId,
             outcomeId,
             side,

@@ -127,6 +127,7 @@ contract OrderBookManager is
         require(podIsWhitelisted[pod], "OrderBookManager: pod not whitelisted");
 
         orderId = pod.placeOrder(
+            msg.sender,  // 传入真实用户地址
             eventId,
             outcomeId,
             side,
