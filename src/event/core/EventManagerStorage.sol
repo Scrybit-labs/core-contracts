@@ -33,7 +33,14 @@ abstract contract EventManagerStorage is IEventManager {
     /// @notice 当前用于负载均衡的 Pod 索引(轮询)
     uint256 internal currentPodIndex;
 
+    /// @notice OrderBookManager 合约地址 (用于注册事件到订单簿)
+    address public orderBookManager;
+
+    /// @notice EventPod 到 OrderBookPod 的映射 (一对一)
+    /// @dev 每个 EventPod 对应一个 OrderBookPod,实现完全隔离
+    mapping(IEventPod => address) public eventPodToOrderBookPod;
+
     /// @notice 预留升级空间(OpenZeppelin 升级模式)
-    /// @dev 减去已使用的 slot 数量: 7 个映射/变量 = 7 slots
-    uint256[43] private _gap;
+    /// @dev 减去已使用的 slot 数量: 9 个映射/变量 = 9 slots
+    uint256[41] private _gap;
 }

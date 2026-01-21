@@ -27,6 +27,15 @@ contract OrderBookManager is
         _;
     }
 
+    /// @notice 仅授权调用者 (owner 或授权的合约如 EventManager/EventPod)
+    modifier onlyAuthorizedCaller() {
+        require(
+            authorizedCallers[msg.sender] || msg.sender == owner(),
+            "OrderBookManager: caller not authorized"
+        );
+        _;
+    }
+
     // ============ Constructor & Initializer ============
 
     constructor() {
@@ -77,7 +86,7 @@ contract OrderBookManager is
         IOrderBookPod pod,
         uint256 eventId,
         uint256[] calldata outcomeIds
-    ) external onlyOwner onlyWhitelistedPod(pod) {
+    ) external onlyAuthorizedCaller onlyWhitelistedPod(pod) {
         require(
             address(eventIdToPod[eventId]) == address(0),
             "OrderBookManager: event already registered"
@@ -169,6 +178,38 @@ contract OrderBookManager is
     // ============ 管理功能 Admin Functions ============
 
     /**
+     * @notice 添加授权调用者 (如 EventManager/EventPod)
+     * @param caller 调用者地址
+     */
+    function addAuthorizedCaller(address caller) external onlyOwner {
+        require(caller != address(0), "OrderBookManager: invalid caller address");
+        require(!authorizedCallers[caller], "OrderBookManager: already authorized");
+
+        authorizedCallers[caller] = true;
+        emit AuthorizedCallerAdded(caller);
+    }
+
+    /**
+     * @notice 移除授权调用者
+     * @param caller 调用者地址
+     */
+    function removeAuthorizedCaller(address caller) external onlyOwner {
+        require(authorizedCallers[caller], "OrderBookManager: not authorized");
+
+        authorizedCallers[caller] = false;
+        emit AuthorizedCallerRemoved(caller);
+    }
+
+    /**
+     * @notice 检查地址是否为授权调用者
+     * @param caller 调用者地址
+     * @return isAuthorized 是否授权
+     */
+    function isAuthorizedCaller(address caller) external view returns (bool) {
+        return authorizedCallers[caller];
+    }
+
+    /**
      * @notice 暂停合约
      */
     function pause() external onlyOwner {
@@ -181,4 +222,12 @@ contract OrderBookManager is
     function unpause() external onlyOwner {
         _unpause();
     }
+
+    // ============ 事件 Events ============
+
+    /// @notice 授权调用者添加事件
+    event AuthorizedCallerAdded(address indexed caller);
+
+    /// @notice 授权调用者移除事件
+    event AuthorizedCallerRemoved(address indexed caller);
 }

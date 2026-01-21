@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./EventManagerStorage.sol";
 import "../../interfaces/event/IEventPod.sol";
 import "../../interfaces/event/IOrderBookManager.sol";
+import "../../interfaces/event/IOrderBookPod.sol";
 
 /**
  * @title EventManager
@@ -50,6 +51,29 @@ contract EventManager is
 
         // 初始化事件 ID 从 1 开始
         nextEventId = 1;
+    }
+
+    /**
+     * @notice 设置 OrderBookManager 地址
+     * @param _orderBookManager OrderBookManager 合约地址
+     */
+    function setOrderBookManager(address _orderBookManager) external onlyOwner {
+        require(_orderBookManager != address(0), "EventManager: invalid orderBookManager");
+        orderBookManager = _orderBookManager;
+    }
+
+    /**
+     * @notice 配置 EventPod 对应的 OrderBookPod
+     * @param eventPod EventPod 地址
+     * @param orderBookPod OrderBookPod 地址
+     */
+    function setEventPodOrderBookPod(IEventPod eventPod, address orderBookPod) external onlyOwner {
+        require(address(eventPod) != address(0), "EventManager: invalid eventPod");
+        require(orderBookPod != address(0), "EventManager: invalid orderBookPod");
+        require(podIsWhitelisted[eventPod], "EventManager: eventPod not whitelisted");
+
+        eventPodToOrderBookPod[eventPod] = orderBookPod;
+        emit EventPodOrderBookPodMapped(address(eventPod), orderBookPod);
     }
 
     // ============ Pod 管理功能 ============
@@ -200,6 +224,11 @@ contract EventManager is
             outcomeDescriptions
         );
 
+        // 注册事件到 OrderBookManager (自动调用)
+        if (orderBookManager != address(0)) {
+            _registerEventToOrderBook(eventId, outcomeIds);
+        }
+
         emit EventCreatedByManager(eventId, address(assignedPod), msg.sender, title);
     }
 
@@ -217,6 +246,28 @@ contract EventManager is
 
         // 更新索引(循环)
         currentPodIndex = (currentPodIndex + 1) % whitelistedPods.length;
+    }
+
+    /**
+     * @notice 注册事件到 OrderBookManager
+     * @param eventId 事件 ID
+     * @param outcomeIds 结果 ID 列表
+     */
+    function _registerEventToOrderBook(uint256 eventId, uint256[] memory outcomeIds) internal {
+        // 获取当前事件所属的 EventPod
+        IEventPod eventPod = eventIdToPod[eventId];
+        require(address(eventPod) != address(0), "EventManager: event not mapped to pod");
+
+        // 获取对应的 OrderBookPod
+        address orderBookPod = eventPodToOrderBookPod[eventPod];
+        require(orderBookPod != address(0), "EventManager: OrderBookPod not configured for EventPod");
+
+        // 调用 OrderBookManager 注册事件到 OrderBookPod
+        IOrderBookManager(orderBookManager).registerEventToPod(
+            IOrderBookPod(orderBookPod),
+            eventId,
+            outcomeIds
+        );
     }
 
     // ============ 查询功能 View Functions ============
@@ -272,4 +323,9 @@ contract EventManager is
     function unpause() external onlyOwner {
         _unpause();
     }
+
+    // ============ 事件 Events ============
+
+    /// @notice EventPod 映射到 OrderBookPod 事件
+    event EventPodOrderBookPodMapped(address indexed eventPod, address indexed orderBookPod);
 }
