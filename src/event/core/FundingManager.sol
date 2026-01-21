@@ -145,8 +145,8 @@ contract FundingManager is
         (bool sent, ) = address(fundingPod).call{value: msg.value}("");
         require(sent, "FundingManager: failed to send ETH");
 
-        // 调用 Pod 的 deposit 函数
-        fundingPod.deposit(fundingPod.ETHAddress(), msg.value);
+        // 调用 Pod 的 deposit 函数 (传入真实用户地址)
+        fundingPod.deposit(msg.sender, fundingPod.ETHAddress(), msg.value);
 
         return true;
     }
@@ -167,8 +167,8 @@ contract FundingManager is
         // 从用户转账到 Pod
         tokenAddress.safeTransferFrom(msg.sender, address(fundingPod), amount);
 
-        // 调用 Pod 的 deposit 函数
-        fundingPod.deposit(address(tokenAddress), amount);
+        // 调用 Pod 的 deposit 函数 (传入真实用户地址)
+        fundingPod.deposit(msg.sender, address(tokenAddress), amount);
     }
 
     // ============ 提现功能 Withdraw Functions ============
@@ -186,8 +186,8 @@ contract FundingManager is
     ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
         require(amount > 0, "FundingManager: withdraw amount must be greater than 0");
 
-        // 调用 Pod 的 withdraw 函数
-        fundingPod.withdraw(tokenAddress, payable(msg.sender), amount);
+        // 调用 Pod 的 withdraw 函数 (传入真实用户地址)
+        fundingPod.withdraw(msg.sender, tokenAddress, payable(msg.sender), amount);
     }
 
     /**
@@ -206,8 +206,8 @@ contract FundingManager is
         require(recipient != address(0), "FundingManager: invalid recipient");
         require(amount > 0, "FundingManager: withdraw amount must be greater than 0");
 
-        // 调用 Pod 的 withdraw 函数
-        fundingPod.withdraw(tokenAddress, payable(recipient), amount);
+        // 调用 Pod 的 withdraw 函数 (管理员指定接收者和金额)
+        fundingPod.withdraw(recipient, tokenAddress, payable(recipient), amount);
     }
 
     // ============ 查询功能 View Functions ============

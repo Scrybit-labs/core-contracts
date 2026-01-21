@@ -58,18 +58,20 @@ interface IFundingPod {
 
     /**
      * @notice 用户入金
+     * @param user 用户地址 (由 FundingManager 传入)
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function deposit(address tokenAddress, uint256 amount) external;
+    function deposit(address user, address tokenAddress, uint256 amount) external;
 
     /**
      * @notice 用户提现
+     * @param user 用户地址 (由 FundingManager 传入)
      * @param tokenAddress Token 地址
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
-    function withdraw(address tokenAddress, address payable withdrawAddress, uint256 amount) external;
+    function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount) external;
 
     /**
      * @notice 设置支持的 ERC20 Token

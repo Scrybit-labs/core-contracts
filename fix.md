@@ -156,8 +156,8 @@ mapping(IEventPod => address) public eventPodToOrderBookPod;
     ) internal {
     // 获取 EventPod
     IEventPod eventPod = eventIdToPod[eventId];
-        // 获取对应的 OrderBookPod
-        address orderBookPod = eventPodToOrderBookPod[eventPod];
+    // 获取对应的 OrderBookPod
+    address orderBookPod = eventPodToOrderBookPod[eventPod];
 
         // 调用 OrderBookManager 注册
         IOrderBookManager(orderBookManager).registerEventToPod(
@@ -165,6 +165,7 @@ mapping(IEventPod => address) public eventPodToOrderBookPod;
             eventId,
             outcomeIds
         );
+
     }
 
 修改 createEvent 函数 (EventManager.sol:212-215):

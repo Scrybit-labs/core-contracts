@@ -82,23 +82,20 @@ contract FundingPod is
 
     /**
      * @notice 用户入金
+     * @param user 用户地址 (由 FundingManager 传入)
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function deposit(address tokenAddress, uint256 amount) external onlyFundingManager {
+    function deposit(address user, address tokenAddress, uint256 amount) external onlyFundingManager {
         if (!IsSupportToken[tokenAddress]) {
             revert TokenIsNotSupported(tokenAddress);
         }
         if (amount == 0) {
             revert LessThanZero(amount);
         }
+        require(user != address(0), "FundingPod: invalid user address");
 
-        // 更新余额(msg.sender 在通过 FundingManager 调用时是实际用户)
-        // 注意: 这里的 msg.sender 是 FundingManager,需要从 tx.origin 获取真实用户
-        // 但 tx.origin 不安全,所以应该由 FundingManager 传入用户地址
-        // 为了保持接口兼容性,暂时使用 tx.origin (生产环境需要修改接口)
-        address user = tx.origin;
-
+        // 更新余额
         userTokenBalances[user][tokenAddress] += amount;
         tokenBalances[tokenAddress] += amount;
         totalDeposited[tokenAddress] += amount;
@@ -108,11 +105,13 @@ contract FundingPod is
 
     /**
      * @notice 用户提现
+     * @param user 用户地址 (由 FundingManager 传入)
      * @param tokenAddress Token 地址
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
     function withdraw(
+        address user,
         address tokenAddress,
         address payable withdrawAddress,
         uint256 amount
@@ -123,8 +122,8 @@ contract FundingPod is
         if (amount == 0) {
             revert LessThanZero(amount);
         }
+        require(user != address(0), "FundingPod: invalid user address");
 
-        address user = tx.origin;
         uint256 availableBalance = userTokenBalances[user][tokenAddress];
 
         if (availableBalance < amount) {
