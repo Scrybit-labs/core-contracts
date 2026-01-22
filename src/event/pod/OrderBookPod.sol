@@ -15,19 +15,11 @@ import "../../interfaces/event/IFeeVaultPod.sol";
  * @notice 订单簿 Pod - 负责订单撮合和持仓管理
  * @dev 集成 FundingPod 进行资金管理
  */
-contract OrderBookPod is
-    Initializable,
-    OwnableUpgradeable,
-    PausableUpgradeable,
-    OrderBookPodStorage
-{
+contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable, OrderBookPodStorage {
     // ============ Modifiers ============
 
     modifier onlyOrderBookManager() {
-        require(
-            msg.sender == orderBookManager,
-            "OrderBookPod: only orderBookManager"
-        );
+        require(msg.sender == orderBookManager, "OrderBookPod: only orderBookManager");
         _;
     }
 
@@ -70,47 +62,53 @@ contract OrderBookPod is
     ) external whenNotPaused onlyOrderBookManager returns (uint256 orderId) {
         require(user != address(0), "OrderBookPod: invalid user address");
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
-        if (!supportedOutcomes[eventId][outcomeId])
+        if (!supportedOutcomes[eventId][outcomeId]) {
             revert OutcomeNotSupported(eventId, outcomeId);
+        }
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
         if (price == 0 || price > MAX_PRICE) revert InvalidPrice(price);
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
         if (amount == 0) revert InvalidAmount(amount);
 
-        // ✅ 计算手续费
+        // 计算手续费
         uint256 fee = 0;
         if (feeVaultPod != address(0)) {
             fee = IFeeVaultPod(feeVaultPod).calculateFee(amount, "trade");
         }
 
-        // ✅ 集成 FundingPod: 锁定下单所需资金 (包含手续费)
+        // 集成 FundingPod: 锁定下单所需资金或 Long Token
+        // 买单锁定 USDT (包含手续费): (amount + fee) * price / MAX_PRICE
+        // 卖单锁定 Long Token (包含手续费): amount + fee
         uint256 requiredAmount = side == OrderSide.Buy
-            ? ((amount + fee) * price) / MAX_PRICE  // 买单锁定: (amount + fee) * price
-            : (amount + fee);                        // 卖单锁定: amount + fee
+            ? ((amount + fee) * price) / MAX_PRICE
+            : (amount + fee);
 
-        IFundingPod(fundingPod).lockOnOrderPlaced(
-            user,  // 使用传入的真实用户地址
-            tokenAddress,
-            requiredAmount,
-            eventId,
-            outcomeId
+        IFundingPod(fundingPod).lockForOrder(
+            user,              // 用户地址
+            nextOrderId,       // 订单 ID
+            tokenAddress,      // Token 地址
+            side == OrderSide.Buy,  // 是否为买单
+            requiredAmount,    // 锁定数量
+            eventId,           // 事件 ID
+            outcomeId          // 结果 ID
         );
 
-        // ✅ 收取手续费
+        // 收取手续费
         if (fee > 0 && feeVaultPod != address(0)) {
-            IFeeVaultPod(feeVaultPod).collectFee(
-                tokenAddress,
-                user,  // 使用传入的真实用户地址
-                fee,
-                eventId,
-                "trade"
-            );
+            IFeeVaultPod(feeVaultPod)
+                .collectFee(
+                    tokenAddress,
+                    user, // 使用传入的真实用户地址
+                    fee,
+                    eventId,
+                    "trade"
+                );
         }
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
             orderId: orderId,
-            user: user,  // 使用传入的真实用户地址
+            user: user, // 使用传入的真实用户地址
             eventId: eventId,
             outcomeId: outcomeId,
             side: side,
@@ -126,16 +124,13 @@ contract OrderBookPod is
 
         _matchOrder(orderId);
 
-        if (
-            orders[orderId].status == OrderStatus.Pending ||
-            orders[orderId].status == OrderStatus.Partial
-        ) {
+        if (orders[orderId].status == OrderStatus.Pending || orders[orderId].status == OrderStatus.Partial) {
             _addToOrderBook(orderId);
         }
 
         emit OrderPlaced(
             orderId,
-            user,  // 使用传入的真实用户地址
+            user, // 使用传入的真实用户地址
             eventId,
             outcomeId,
             side,
@@ -147,29 +142,24 @@ contract OrderBookPod is
     function cancelOrder(uint256 orderId) external onlyOrderBookManager {
         Order storage order = orders[orderId];
 
-        if (
-            order.status != OrderStatus.Pending &&
-            order.status != OrderStatus.Partial
-        ) {
+        if (order.status != OrderStatus.Pending && order.status != OrderStatus.Partial) {
             revert CannotCancelOrder(orderId);
         }
-        if (eventSettled[order.eventId])
+        if (eventSettled[order.eventId]) {
             revert EventAlreadySettled(order.eventId);
+        }
 
         _removeFromOrderBook(orderId);
 
         order.status = OrderStatus.Cancelled;
 
         if (order.remainingAmount > 0) {
-            // ✅ 集成 FundingPod: 解锁剩余未成交资金
-            uint256 unlockedAmount = order.side == OrderSide.Buy
-                ? (order.remainingAmount * order.price) / MAX_PRICE
-                : order.remainingAmount;
-
-            IFundingPod(fundingPod).unlockOnOrderCancelled(
+            // 集成 FundingPod: 解锁剩余未成交资金或 Long Token
+            IFundingPod(fundingPod).unlockForOrder(
                 order.user,
+                orderId,
                 order.tokenAddress,
-                unlockedAmount,
+                order.side == OrderSide.Buy,  // 是否为买单
                 order.eventId,
                 order.outcomeId
             );
@@ -178,14 +168,12 @@ contract OrderBookPod is
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
     }
 
-    function settleEvent(
-        uint256 eventId,
-        uint256 winningOutcomeId
-    ) external onlyEventPod {
+    function settleEvent(uint256 eventId, uint256 winningOutcomeId) external onlyEventPod {
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
-        if (!supportedOutcomes[eventId][winningOutcomeId])
+        if (!supportedOutcomes[eventId][winningOutcomeId]) {
             revert OutcomeNotSupported(eventId, winningOutcomeId);
+        }
 
         eventSettled[eventId] = true;
         eventResults[eventId] = winningOutcomeId;
@@ -196,10 +184,7 @@ contract OrderBookPod is
         emit EventSettled(eventId, winningOutcomeId);
     }
 
-    function addEvent(
-        uint256 eventId,
-        uint256[] calldata outcomeIds
-    ) external onlyOrderBookManager {
+    function addEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookManager {
         require(!supportedEvents[eventId], "OrderBookPod: event exists");
         supportedEvents[eventId] = true;
 
@@ -211,16 +196,15 @@ contract OrderBookPod is
             eventOrderBook.supportedOutcomes.push(outcomeId);
         }
 
+        // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)
+        IFundingPod(fundingPod).registerEvent(eventId, outcomeIds);
+
         emit EventAdded(eventId, outcomeIds);
     }
 
-    function getBestBid(
-        uint256 eventId,
-        uint256 outcomeId
-    ) external view returns (uint256 price, uint256 amount) {
+    function getBestBid(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount) {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook
-            .outcomeOrderBooks[outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeId];
 
         if (outcomeOrderBook.buyPriceLevels.length > 0) {
             price = outcomeOrderBook.buyPriceLevels[0];
@@ -228,13 +212,9 @@ contract OrderBookPod is
         }
     }
 
-    function getBestAsk(
-        uint256 eventId,
-        uint256 outcomeId
-    ) external view returns (uint256 price, uint256 amount) {
+    function getBestAsk(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount) {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook
-            .outcomeOrderBooks[outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeId];
 
         if (outcomeOrderBook.sellPriceLevels.length > 0) {
             price = outcomeOrderBook.sellPriceLevels[0];
@@ -248,8 +228,7 @@ contract OrderBookPod is
     function _matchOrder(uint256 orderId) internal {
         Order storage order = orders[orderId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook
-            .outcomeOrderBooks[order.outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeId];
 
         if (order.side == OrderSide.Buy) {
             _matchBuy(orderId, outcomeOrderBook);
@@ -258,77 +237,47 @@ contract OrderBookPod is
         }
     }
 
-    function _matchBuy(
-        uint256 buyOrderId,
-        OutcomeOrderBook storage book
-    ) internal {
+    function _matchBuy(uint256 buyOrderId, OutcomeOrderBook storage book) internal {
         Order storage buyOrder = orders[buyOrderId];
 
-        for (
-            uint256 i = 0;
-            i < book.sellPriceLevels.length && buyOrder.remainingAmount > 0;
-            i++
-        ) {
+        for (uint256 i = 0; i < book.sellPriceLevels.length && buyOrder.remainingAmount > 0; i++) {
             uint256 sellPrice = book.sellPriceLevels[i];
             if (sellPrice > buyOrder.price) break;
 
             uint256[] storage sellOrders = book.sellOrdersByPrice[sellPrice];
-            for (
-                uint256 j = 0;
-                j < sellOrders.length && buyOrder.remainingAmount > 0;
-                j++
-            ) {
+            for (uint256 j = 0; j < sellOrders.length && buyOrder.remainingAmount > 0; j++) {
                 uint256 sellOrderId = sellOrders[j];
                 Order storage sellOrder = orders[sellOrderId];
-                if (
-                    sellOrder.status == OrderStatus.Cancelled ||
-                    sellOrder.remainingAmount == 0
-                ) continue;
-                if (buyOrder.eventId != sellOrder.eventId)
+                if (sellOrder.status == OrderStatus.Cancelled || sellOrder.remainingAmount == 0) continue;
+                if (buyOrder.eventId != sellOrder.eventId) {
                     revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
-                if (buyOrder.outcomeId != sellOrder.outcomeId)
-                    revert OutcomeMismatch(
-                        buyOrder.outcomeId,
-                        sellOrder.outcomeId
-                    );
+                }
+                if (buyOrder.outcomeId != sellOrder.outcomeId) {
+                    revert OutcomeMismatch(buyOrder.outcomeId, sellOrder.outcomeId);
+                }
                 _executeMatch(buyOrderId, sellOrderId);
             }
         }
     }
 
-    function _matchSell(
-        uint256 sellOrderId,
-        OutcomeOrderBook storage book
-    ) internal {
+    function _matchSell(uint256 sellOrderId, OutcomeOrderBook storage book) internal {
         Order storage sellOrder = orders[sellOrderId];
 
-        for (
-            uint256 i = 0;
-            i < book.buyPriceLevels.length && sellOrder.remainingAmount > 0;
-            i++
-        ) {
+        for (uint256 i = 0; i < book.buyPriceLevels.length && sellOrder.remainingAmount > 0; i++) {
             uint256 buyPrice = book.buyPriceLevels[i];
             if (buyPrice < sellOrder.price) break;
 
             uint256[] storage buyOrders = book.buyOrdersByPrice[buyPrice];
-            for (
-                uint256 j = 0;
-                j < buyOrders.length && sellOrder.remainingAmount > 0;
-                j++
-            ) {
+            for (uint256 j = 0; j < buyOrders.length && sellOrder.remainingAmount > 0; j++) {
                 uint256 buyOrderId = buyOrders[j];
                 Order storage buyOrder = orders[buyOrderId];
-                if (
-                    buyOrder.status == OrderStatus.Cancelled ||
-                    buyOrder.remainingAmount == 0
-                ) continue;
-                if (buyOrder.eventId != sellOrder.eventId)
+                if (buyOrder.status == OrderStatus.Cancelled || buyOrder.remainingAmount == 0) continue;
+                if (buyOrder.eventId != sellOrder.eventId) {
                     revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
-                if (buyOrder.outcomeId != sellOrder.outcomeId)
-                    revert OutcomeMismatch(
-                        buyOrder.outcomeId,
-                        sellOrder.outcomeId
-                    );
+                }
+                if (buyOrder.outcomeId != sellOrder.outcomeId) {
+                    revert OutcomeMismatch(buyOrder.outcomeId, sellOrder.outcomeId);
+                }
                 _executeMatch(buyOrderId, sellOrderId);
             }
         }
@@ -338,10 +287,8 @@ contract OrderBookPod is
         Order storage buyOrder = orders[buyOrderId];
         Order storage sellOrder = orders[sellOrderId];
 
-        uint256 matchAmount = buyOrder.remainingAmount <
-            sellOrder.remainingAmount
-            ? buyOrder.remainingAmount
-            : sellOrder.remainingAmount;
+        uint256 matchAmount =
+            buyOrder.remainingAmount < sellOrder.remainingAmount ? buyOrder.remainingAmount : sellOrder.remainingAmount;
 
         uint256 matchPrice = sellOrder.price;
 
@@ -361,29 +308,23 @@ contract OrderBookPod is
         _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeId, buyOrder.user);
 
         // ✅ 持仓管理: 卖家持仓减少(卖出做空)
-        if (
-            positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] >=
-            matchAmount
-        ) {
-            positions[sellOrder.eventId][sellOrder.outcomeId][
-                sellOrder.user
-            ] -= matchAmount;
+        if (positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] >= matchAmount) {
+            positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] -= matchAmount;
         } else {
-            positions[sellOrder.eventId][sellOrder.outcomeId][
-                sellOrder.user
-            ] = 0;
+            positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] = 0;
         }
 
-        // ✅ 集成 FundingPod: 资金结算
+        // 集成 FundingPod: 资金结算 (虚拟 Long Token 模型)
         IFundingPod(fundingPod).settleMatchedOrder(
-            buyOrder.user,
-            sellOrder.user,
-            buyOrder.tokenAddress,
-            matchAmount,
-            matchPrice,
-            buyOrder.eventId,
-            buyOrder.outcomeId,
-            sellOrder.outcomeId
+            buyOrderId,              // 买单 ID
+            sellOrderId,             // 卖单 ID
+            buyOrder.user,           // 买家地址
+            sellOrder.user,          // 卖家地址
+            buyOrder.tokenAddress,   // Token 地址
+            matchAmount,             // 成交数量
+            matchPrice,              // 成交价格
+            buyOrder.eventId,        // 事件 ID
+            buyOrder.outcomeId       // 结果 ID (买卖同一 outcome)
         );
 
         // ✅ 收取撮合手续费
@@ -393,23 +334,13 @@ contract OrderBookPod is
             uint256 sellerFee = matchFee - buyerFee;
 
             if (buyerFee > 0) {
-                IFeeVaultPod(feeVaultPod).collectFee(
-                    buyOrder.tokenAddress,
-                    buyOrder.user,
-                    buyerFee,
-                    buyOrder.eventId,
-                    "trade"
-                );
+                IFeeVaultPod(feeVaultPod)
+                    .collectFee(buyOrder.tokenAddress, buyOrder.user, buyerFee, buyOrder.eventId, "trade");
             }
 
             if (sellerFee > 0) {
-                IFeeVaultPod(feeVaultPod).collectFee(
-                    sellOrder.tokenAddress,
-                    sellOrder.user,
-                    sellerFee,
-                    sellOrder.eventId,
-                    "trade"
-                );
+                IFeeVaultPod(feeVaultPod)
+                    .collectFee(sellOrder.tokenAddress, sellOrder.user, sellerFee, sellOrder.eventId, "trade");
             }
         }
 
@@ -427,14 +358,7 @@ contract OrderBookPod is
             sellOrder.status = OrderStatus.Partial;
         }
 
-        emit OrderMatched(
-            buyOrderId,
-            sellOrderId,
-            buyOrder.eventId,
-            buyOrder.outcomeId,
-            matchPrice,
-            matchAmount
-        );
+        emit OrderMatched(buyOrderId, sellOrderId, buyOrder.eventId, buyOrder.outcomeId, matchPrice, matchAmount);
     }
 
     // ------------------------------------------------------------
@@ -443,8 +367,7 @@ contract OrderBookPod is
     function _addToOrderBook(uint256 orderId) internal {
         Order storage order = orders[orderId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook
-            .outcomeOrderBooks[order.outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeId];
 
         if (order.side == OrderSide.Buy) {
             if (outcomeOrderBook.buyOrdersByPrice[order.price].length == 0) {
@@ -462,21 +385,16 @@ contract OrderBookPod is
     function _removeFromOrderBook(uint256 orderId) internal {
         Order storage order = orders[orderId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook
-            .outcomeOrderBooks[order.outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeId];
 
         if (order.side == OrderSide.Buy) {
-            uint256[] storage priceOrders = outcomeOrderBook.buyOrdersByPrice[
-                order.price
-            ];
+            uint256[] storage priceOrders = outcomeOrderBook.buyOrdersByPrice[order.price];
             _removeFromArray(priceOrders, orderId);
             if (priceOrders.length == 0) {
                 _removeBuyPrice(outcomeOrderBook, order.price);
             }
         } else {
-            uint256[] storage priceOrders = outcomeOrderBook.sellOrdersByPrice[
-                order.price
-            ];
+            uint256[] storage priceOrders = outcomeOrderBook.sellOrdersByPrice[order.price];
             _removeFromArray(priceOrders, orderId);
             if (priceOrders.length == 0) {
                 _removeSellPrice(outcomeOrderBook, order.price);
@@ -484,21 +402,12 @@ contract OrderBookPod is
         }
     }
 
-    function _insertBuyPrice(
-        OutcomeOrderBook storage orderBook,
-        uint256 price
-    ) internal {
+    function _insertBuyPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
         uint256 i = 0;
-        while (
-            i < orderBook.buyPriceLevels.length &&
-            orderBook.buyPriceLevels[i] > price
-        ) {
+        while (i < orderBook.buyPriceLevels.length && orderBook.buyPriceLevels[i] > price) {
             i++;
         }
-        if (
-            i < orderBook.buyPriceLevels.length &&
-            orderBook.buyPriceLevels[i] == price
-        ) return;
+        if (i < orderBook.buyPriceLevels.length && orderBook.buyPriceLevels[i] == price) return;
 
         orderBook.buyPriceLevels.push(0);
         for (uint256 j = orderBook.buyPriceLevels.length - 1; j > i; j--) {
@@ -507,21 +416,12 @@ contract OrderBookPod is
         orderBook.buyPriceLevels[i] = price;
     }
 
-    function _insertSellPrice(
-        OutcomeOrderBook storage orderBook,
-        uint256 price
-    ) internal {
+    function _insertSellPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
         uint256 i = 0;
-        while (
-            i < orderBook.sellPriceLevels.length &&
-            orderBook.sellPriceLevels[i] < price
-        ) {
+        while (i < orderBook.sellPriceLevels.length && orderBook.sellPriceLevels[i] < price) {
             i++;
         }
-        if (
-            i < orderBook.sellPriceLevels.length &&
-            orderBook.sellPriceLevels[i] == price
-        ) return;
+        if (i < orderBook.sellPriceLevels.length && orderBook.sellPriceLevels[i] == price) return;
 
         orderBook.sellPriceLevels.push(0);
         for (uint256 j = orderBook.sellPriceLevels.length - 1; j > i; j--) {
@@ -530,20 +430,11 @@ contract OrderBookPod is
         orderBook.sellPriceLevels[i] = price;
     }
 
-    function _removeBuyPrice(
-        OutcomeOrderBook storage orderBook,
-        uint256 price
-    ) internal {
+    function _removeBuyPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
         for (uint256 i = 0; i < orderBook.buyPriceLevels.length; i++) {
             if (orderBook.buyPriceLevels[i] == price) {
-                for (
-                    uint256 j = i;
-                    j < orderBook.buyPriceLevels.length - 1;
-                    j++
-                ) {
-                    orderBook.buyPriceLevels[j] = orderBook.buyPriceLevels[
-                        j + 1
-                    ];
+                for (uint256 j = i; j < orderBook.buyPriceLevels.length - 1; j++) {
+                    orderBook.buyPriceLevels[j] = orderBook.buyPriceLevels[j + 1];
                 }
                 orderBook.buyPriceLevels.pop();
                 break;
@@ -551,20 +442,11 @@ contract OrderBookPod is
         }
     }
 
-    function _removeSellPrice(
-        OutcomeOrderBook storage orderBook,
-        uint256 price
-    ) internal {
+    function _removeSellPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
         for (uint256 i = 0; i < orderBook.sellPriceLevels.length; i++) {
             if (orderBook.sellPriceLevels[i] == price) {
-                for (
-                    uint256 j = i;
-                    j < orderBook.sellPriceLevels.length - 1;
-                    j++
-                ) {
-                    orderBook.sellPriceLevels[j] = orderBook.sellPriceLevels[
-                        j + 1
-                    ];
+                for (uint256 j = i; j < orderBook.sellPriceLevels.length - 1; j++) {
+                    orderBook.sellPriceLevels[j] = orderBook.sellPriceLevels[j + 1];
                 }
                 orderBook.sellPriceLevels.pop();
                 break;
@@ -582,15 +464,10 @@ contract OrderBookPod is
         }
     }
 
-    function _totalAtPrice(
-        uint256[] storage orderIds
-    ) internal view returns (uint256 total) {
+    function _totalAtPrice(uint256[] storage orderIds) internal view returns (uint256 total) {
         for (uint256 i = 0; i < orderIds.length; i++) {
             Order storage order = orders[orderIds[i]];
-            if (
-                order.status == OrderStatus.Pending ||
-                order.status == OrderStatus.Partial
-            ) {
+            if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                 total += order.remainingAmount;
             }
         }
@@ -604,36 +481,27 @@ contract OrderBookPod is
 
         for (uint256 i = 0; i < eventOrderBook.supportedOutcomes.length; i++) {
             uint256 outcomeId = eventOrderBook.supportedOutcomes[i];
-            OutcomeOrderBook storage outcomeOrderBook = eventOrderBook
-                .outcomeOrderBooks[outcomeId];
+            OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeId];
             _cancelMarketOrders(outcomeOrderBook);
         }
     }
 
-    function _cancelMarketOrders(
-        OutcomeOrderBook storage marketOrderBook
-    ) internal {
+    function _cancelMarketOrders(OutcomeOrderBook storage marketOrderBook) internal {
         for (uint256 i = 0; i < marketOrderBook.buyPriceLevels.length; i++) {
             uint256 price = marketOrderBook.buyPriceLevels[i];
             uint256[] storage ids = marketOrderBook.buyOrdersByPrice[price];
             for (uint256 j = 0; j < ids.length; j++) {
                 Order storage order = orders[ids[j]];
-                if (
-                    order.status == OrderStatus.Pending ||
-                    order.status == OrderStatus.Partial
-                ) {
+                if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                     order.status = OrderStatus.Cancelled;
 
-                    // ✅ 集成 FundingPod: 批量撤单解锁资金
+                    // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        uint256 unlockedAmount = order.side == OrderSide.Buy
-                            ? (order.remainingAmount * order.price) / MAX_PRICE
-                            : order.remainingAmount;
-
-                        IFundingPod(fundingPod).unlockOnOrderCancelled(
+                        IFundingPod(fundingPod).unlockForOrder(
                             order.user,
+                            ids[j],              // orderId
                             order.tokenAddress,
-                            unlockedAmount,
+                            order.side == OrderSide.Buy,  // 是否为买单
                             order.eventId,
                             order.outcomeId
                         );
@@ -647,22 +515,16 @@ contract OrderBookPod is
             uint256[] storage ids = marketOrderBook.sellOrdersByPrice[price];
             for (uint256 j = 0; j < ids.length; j++) {
                 Order storage order = orders[ids[j]];
-                if (
-                    order.status == OrderStatus.Pending ||
-                    order.status == OrderStatus.Partial
-                ) {
+                if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                     order.status = OrderStatus.Cancelled;
 
-                    // ✅ 集成 FundingPod: 批量撤单解锁资金
+                    // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        uint256 unlockedAmount = order.side == OrderSide.Buy
-                            ? (order.remainingAmount * order.price) / MAX_PRICE
-                            : order.remainingAmount;
-
-                        IFundingPod(fundingPod).unlockOnOrderCancelled(
+                        IFundingPod(fundingPod).unlockForOrder(
                             order.user,
+                            ids[j],              // orderId
                             order.tokenAddress,
-                            unlockedAmount,
+                            order.side == OrderSide.Buy,  // 是否为买单
                             order.eventId,
                             order.outcomeId
                         );
@@ -673,10 +535,7 @@ contract OrderBookPod is
     }
 
     // ✅ 结算持仓 - 集成 FundingPod 分配奖金
-    function _settlePositions(
-        uint256 eventId,
-        uint256 winningOutcomeId
-    ) internal {
+    function _settlePositions(uint256 eventId, uint256 winningOutcomeId) internal {
         // 获取获胜结果的所有持仓者
         address[] storage winners = positionHolders[eventId][winningOutcomeId];
         if (winners.length == 0) return; // 没有获胜者
@@ -687,9 +546,7 @@ contract OrderBookPod is
 
         // 收集获胜者持仓
         for (uint256 i = 0; i < winners.length; i++) {
-            winningPositions[i] = positions[eventId][winningOutcomeId][
-                winners[i]
-            ];
+            winningPositions[i] = positions[eventId][winningOutcomeId][winners[i]];
 
             // 从该用户的订单中获取 token 地址
             if (tokenAddress == address(0) && userOrders[winners[i]].length > 0) {
@@ -705,13 +562,7 @@ contract OrderBookPod is
 
         // 如果找到了 token 地址,调用 FundingPod 结算
         if (tokenAddress != address(0)) {
-            IFundingPod(fundingPod).settleEvent(
-                eventId,
-                winningOutcomeId,
-                tokenAddress,
-                winners,
-                winningPositions
-            );
+            IFundingPod(fundingPod).settleEvent(eventId, winningOutcomeId, tokenAddress, winners, winningPositions);
         }
     }
 
@@ -723,11 +574,7 @@ contract OrderBookPod is
      * @param outcomeId 结果 ID
      * @param user 用户地址
      */
-    function _recordPositionHolder(
-        uint256 eventId,
-        uint256 outcomeId,
-        address user
-    ) internal {
+    function _recordPositionHolder(uint256 eventId, uint256 outcomeId, address user) internal {
         if (!isPositionHolder[eventId][outcomeId][user]) {
             positionHolders[eventId][outcomeId].push(user);
             isPositionHolder[eventId][outcomeId][user] = true;
@@ -752,11 +599,7 @@ contract OrderBookPod is
      * @param user 用户地址
      * @return position 持仓数量
      */
-    function getPosition(
-        uint256 eventId,
-        uint256 outcomeId,
-        address user
-    ) external view returns (uint256 position) {
+    function getPosition(uint256 eventId, uint256 outcomeId, address user) external view returns (uint256 position) {
         return positions[eventId][outcomeId][user];
     }
 

@@ -45,6 +45,22 @@ interface IFundingPod {
         uint256 winnersCount
     );
 
+    /// @notice 完整集合铸造事件
+    event CompleteSetMinted(address indexed user, uint256 indexed eventId, address indexed token, uint256 amount);
+
+    /// @notice 完整集合销毁事件
+    event CompleteSetBurned(address indexed user, uint256 indexed eventId, address indexed token, uint256 amount);
+
+    /// @notice Long Token 转移事件
+    event LongTransferred(
+        address indexed from,
+        address indexed to,
+        uint256 indexed eventId,
+        uint256 outcomeId,
+        address token,
+        uint256 amount
+    );
+
     // ============ 错误 Errors ============
 
     error LessThanZero(uint256 amount);
@@ -53,6 +69,8 @@ interface IFundingPod {
     error InsufficientLockedBalance(address user, address token, uint256 eventId, uint256 outcomeId);
     error EventAlreadySettled(uint256 eventId);
     error InvalidWinningOutcome(uint256 eventId, uint256 outcomeId);
+    error InsufficientLongPosition(address user, address token, uint256 eventId, uint256 outcomeId);
+    error EventNotRegistered(uint256 eventId);
 
     // ============ 基础功能 Basic Functions ============
 
@@ -83,46 +101,90 @@ interface IFundingPod {
     // ============ 核心资金管理 Core Funding Functions ============
 
     /**
-     * @notice 下单时锁定资金
+     * @notice 注册事件的结果选项
+     * @param eventId 事件 ID
+     * @param outcomeIds 结果 ID 列表
+     */
+    function registerEvent(uint256 eventId, uint256[] calldata outcomeIds) external;
+
+    /**
+     * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long)
      * @param user 用户地址
+     * @param eventId 事件 ID
      * @param token Token 地址
-     * @param amount 锁定金额
+     * @param amount 铸造数量
+     */
+    function mintCompleteSet(address user, uint256 eventId, address token, uint256 amount) external;
+
+    /**
+     * @notice 销毁完整集合 (用户销毁所有结果各 amount 份 Long,获得 amount USDT)
+     * @param user 用户地址
+     * @param eventId 事件 ID
+     * @param token Token 地址
+     * @param amount 销毁数量
+     */
+    function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount) external;
+
+    /**
+     * @notice 下单时锁定资金或 Long Token
+     * @param user 用户地址
+     * @param orderId 订单 ID
+     * @param token Token 地址
+     * @param isBuyOrder 是否为买单
+     * @param amount 锁定数量 (买单锁 USDT,卖单锁 Long)
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
      */
-    function lockOnOrderPlaced(address user, address token, uint256 amount, uint256 eventId, uint256 outcomeId) external;
+    function lockForOrder(
+        address user,
+        uint256 orderId,
+        address token,
+        bool isBuyOrder,
+        uint256 amount,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external;
 
     /**
-     * @notice 撤单时解锁资金
+     * @notice 撤单时解锁资金或 Long Token
      * @param user 用户地址
+     * @param orderId 订单 ID
      * @param token Token 地址
-     * @param amount 解锁金额
+     * @param isBuyOrder 是否为买单
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
      */
-    function unlockOnOrderCancelled(address user, address token, uint256 amount, uint256 eventId, uint256 outcomeId)
-        external;
+    function unlockForOrder(
+        address user,
+        uint256 orderId,
+        address token,
+        bool isBuyOrder,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external;
 
     /**
-     * @notice 撮合成交时结算资金
+     * @notice 撮合成交时结算资金 (买家用 USDT 换 Long,卖家用 Long 换 USDT)
+     * @param buyOrderId 买单 ID
+     * @param sellOrderId 卖单 ID
      * @param buyer 买家地址
      * @param seller 卖家地址
      * @param token Token 地址
-     * @param amount 成交数量
-     * @param price 成交价格 (basis points, 1-10000)
+     * @param matchAmount 成交数量
+     * @param matchPrice 成交价格 (basis points, 1-10000)
      * @param eventId 事件 ID
-     * @param buyOutcomeId 买家购买的结果 ID
-     * @param sellOutcomeId 卖家出售的结果 ID
+     * @param outcomeId 结果 ID
      */
     function settleMatchedOrder(
+        uint256 buyOrderId,
+        uint256 sellOrderId,
         address buyer,
         address seller,
         address token,
-        uint256 amount,
-        uint256 price,
+        uint256 matchAmount,
+        uint256 matchPrice,
         uint256 eventId,
-        uint256 buyOutcomeId,
-        uint256 sellOutcomeId
+        uint256 outcomeId
     ) external;
 
     /**
@@ -159,17 +221,33 @@ interface IFundingPod {
     function getUserBalance(address user, address token) external view returns (uint256);
 
     /**
-     * @notice 获取用户在某事件某结果的锁定余额
+     * @notice 获取用户 Long Token 持仓
      * @param user 用户地址
      * @param token Token 地址
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
-     * @return locked 锁定金额
+     * @return position Long Token 数量
      */
-    function getLockedBalance(address user, address token, uint256 eventId, uint256 outcomeId)
+    function getLongPosition(address user, address token, uint256 eventId, uint256 outcomeId)
         external
         view
         returns (uint256);
+
+    /**
+     * @notice 获取订单锁定的 USDT
+     * @param orderId 订单 ID
+     * @return locked 锁定的 USDT 数量
+     */
+    function getOrderLockedUSDT(uint256 orderId) external view returns (uint256);
+
+    /**
+     * @notice 获取订单锁定的 Long Token
+     * @param orderId 订单 ID
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @return locked 锁定的 Long Token 数量
+     */
+    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint256 outcomeId) external view returns (uint256);
 
     /**
      * @notice 获取事件奖金池
