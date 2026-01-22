@@ -25,6 +25,12 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
 
     // ============ Modifiers ============
 
+    /// @notice 仅 FundingManager 可调用
+    modifier onlyFundingManager() {
+        require(msg.sender == fundingManager, "FundingPod: only fundingManager");
+        _;
+    }
+
     /// @notice 仅 OrderBookPod 可调用
     modifier onlyOrderBookPod() {
         require(msg.sender == orderBookPod, "FundingPod: only orderBookPod");
@@ -135,7 +141,6 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
         emit WithdrawToken(tokenAddress, user, withdrawAddress, amount);
     }
 
-
     /**
      * @notice 设置支持的 ERC20 Token
      * @param ERC20Address Token 地址
@@ -168,14 +173,14 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
     /**
      * @notice 注册事件的结果选项
      * @param eventId 事件 ID
-     * @param outcomeIds 结果 ID 列表
+     * @param outcomeCount 结果数量
      */
-    function registerEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookPod {
+    function registerEvent(uint256 eventId, uint256 outcomeCount) external onlyOrderBookPod {
         require(eventOutcomes[eventId].length == 0, "FundingPod: event already registered");
-        require(outcomeIds.length > 0, "FundingPod: empty outcomes");
+        require(outcomeCount > 0, "FundingPod: empty outcomes");
 
-        for (uint256 i = 0; i < outcomeIds.length; i++) {
-            eventOutcomes[eventId].push(outcomeIds[i]);
+        for (uint256 i = 0; i < outcomeCount; i++) {
+            eventOutcomes[eventId].push(i);
         }
     }
 
@@ -186,10 +191,7 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
      * @param token Token 地址
      * @param amount 铸造数量
      */
-    function mintCompleteSet(address user, uint256 eventId, address token, uint256 amount)
-        external
-        onlyFundingManager
-    {
+    function mintCompleteSet(address user, uint256 eventId, address token, uint256 amount) external onlyFundingManager {
         require(amount > 0, "FundingPod: amount must be greater than zero");
         require(eventOutcomes[eventId].length > 0, "FundingPod: event not registered");
 
@@ -220,10 +222,7 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
      * @param token Token 地址
      * @param amount 销毁数量
      */
-    function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount)
-        external
-        onlyFundingManager
-    {
+    function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount) external onlyFundingManager {
         require(amount > 0, "FundingPod: amount must be greater than zero");
         require(eventOutcomes[eventId].length > 0, "FundingPod: event not registered");
 
@@ -481,11 +480,7 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
      * @param outcomeId 结果 ID
      * @return locked 锁定的 Long Token 数量
      */
-    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint256 outcomeId)
-        external
-        view
-        returns (uint256)
-    {
+    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint256 outcomeId) external view returns (uint256) {
         return orderLockedLong[orderId][eventId][outcomeId];
     }
 

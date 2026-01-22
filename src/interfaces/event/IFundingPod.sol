@@ -25,20 +25,12 @@ interface IFundingPod {
 
     /// @notice 资金锁定事件
     event FundsLocked(
-        address indexed user,
-        address indexed token,
-        uint256 amount,
-        uint256 indexed eventId,
-        uint256 outcomeId
+        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint256 outcomeId
     );
 
     /// @notice 资金解锁事件
     event FundsUnlocked(
-        address indexed user,
-        address indexed token,
-        uint256 amount,
-        uint256 indexed eventId,
-        uint256 outcomeId
+        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint256 outcomeId
     );
 
     /// @notice 订单结算事件
@@ -91,11 +83,12 @@ interface IFundingPod {
 
     /**
      * @notice 用户提现 (Public - users can call directly)
+     * @param user 用户地址
      * @param tokenAddress Token 地址
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
-    function withdraw(address tokenAddress, address payable withdrawAddress, uint256 amount) external;
+    function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount) external;
 
     /**
      * @notice 设置支持的 ERC20 Token
@@ -109,9 +102,9 @@ interface IFundingPod {
     /**
      * @notice 注册事件的结果选项
      * @param eventId 事件 ID
-     * @param outcomeIds 结果 ID 列表
+     * @param outcomeCount 结果数量
      */
-    function registerEvent(uint256 eventId, uint256[] calldata outcomeIds) external;
+    function registerEvent(uint256 eventId, uint256 outcomeCount) external;
 
     /**
      * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long)

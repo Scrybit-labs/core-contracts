@@ -82,19 +82,18 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         // 集成 FundingPod: 锁定下单所需资金或 Long Token
         // 买单锁定 USDT (包含手续费): (amount + fee) * price / MAX_PRICE
         // 卖单锁定 Long Token (包含手续费): amount + fee
-        uint256 requiredAmount = side == OrderSide.Buy
-            ? ((amount + fee) * price) / MAX_PRICE
-            : (amount + fee);
+        uint256 requiredAmount = side == OrderSide.Buy ? ((amount + fee) * price) / MAX_PRICE : (amount + fee);
 
-        IFundingPod(fundingPod).lockForOrder(
-            user,              // 用户地址
-            nextOrderId,       // 订单 ID
-            tokenAddress,      // Token 地址
-            side == OrderSide.Buy,  // 是否为买单
-            requiredAmount,    // 锁定数量
-            eventId,           // 事件 ID
-            outcomeId          // 结果 ID
-        );
+        IFundingPod(fundingPod)
+            .lockForOrder(
+                user, // 用户地址
+                nextOrderId, // 订单 ID
+                tokenAddress, // Token 地址
+                side == OrderSide.Buy, // 是否为买单
+                requiredAmount, // 锁定数量
+                eventId, // 事件 ID
+                outcomeId // 结果 ID
+            );
 
         // 收取手续费
         if (fee > 0 && feeVaultPod != address(0)) {
@@ -142,7 +141,6 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         );
     }
 
-
     function cancelOrder(uint256 orderId) external {
         Order storage order = orders[orderId];
 
@@ -159,14 +157,15 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
 
         if (order.remainingAmount > 0) {
             // 集成 FundingPod: 解锁剩余未成交资金或 Long Token
-            IFundingPod(fundingPod).unlockForOrder(
-                order.user,
-                orderId,
-                order.tokenAddress,
-                order.side == OrderSide.Buy,  // 是否为买单
-                order.eventId,
-                order.outcomeId
-            );
+            IFundingPod(fundingPod)
+                .unlockForOrder(
+                    order.user,
+                    orderId,
+                    order.tokenAddress,
+                    order.side == OrderSide.Buy, // 是否为买单
+                    order.eventId,
+                    order.outcomeId
+                );
         }
 
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
@@ -180,16 +179,17 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         }
 
         eventSettled[eventId] = true;
-        eventResults[eventId] = winningOutcomeIndex;
+        eventResults[eventId] = winningOutcomeId;
 
         _cancelAllPendingOrders(eventId);
-        _settlePositions(eventId, winningOutcomeIndex);
+        _settlePositions(eventId, winningOutcomeId);
 
-        emit EventSettled(eventId, winningOutcomeIndex);
+        emit EventSettled(eventId, winningOutcomeId);
     }
 
-    function addEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookManager {
+    function addEvent(uint256 eventId, uint256 outcomeCount) external {
         require(!supportedEvents[eventId], "OrderBookPod: event exists");
+        require(outcomeCount > 0, "OrderBookPod: outcomeCount must be greater than 0");
         supportedEvents[eventId] = true;
 
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
@@ -199,9 +199,9 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         }
 
         // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)
-        IFundingPod(fundingPod).registerEvent(eventId, outcomeIds);
+        IFundingPod(fundingPod).registerEvent(eventId, outcomeCount);
 
-        emit EventAdded(eventId, outcomeIds);
+        emit EventAdded(eventId, outcomeCount);
     }
 
     function getBestBid(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount) {
@@ -317,17 +317,18 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         }
 
         // 集成 FundingPod: 资金结算 (虚拟 Long Token 模型)
-        IFundingPod(fundingPod).settleMatchedOrder(
-            buyOrderId,              // 买单 ID
-            sellOrderId,             // 卖单 ID
-            buyOrder.user,           // 买家地址
-            sellOrder.user,          // 卖家地址
-            buyOrder.tokenAddress,   // Token 地址
-            matchAmount,             // 成交数量
-            matchPrice,              // 成交价格
-            buyOrder.eventId,        // 事件 ID
-            buyOrder.outcomeId       // 结果 ID (买卖同一 outcome)
-        );
+        IFundingPod(fundingPod)
+            .settleMatchedOrder(
+                buyOrderId, // 买单 ID
+                sellOrderId, // 卖单 ID
+                buyOrder.user, // 买家地址
+                sellOrder.user, // 卖家地址
+                buyOrder.tokenAddress, // Token 地址
+                matchAmount, // 成交数量
+                matchPrice, // 成交价格
+                buyOrder.eventId, // 事件 ID
+                buyOrder.outcomeId // 结果 ID (买卖同一 outcome)
+            );
 
         // ✅ 收取撮合手续费
         if (matchFee > 0 && feeVaultPod != address(0)) {
@@ -499,14 +500,15 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
 
                     // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingPod(fundingPod).unlockForOrder(
-                            order.user,
-                            ids[j],              // orderId
-                            order.tokenAddress,
-                            order.side == OrderSide.Buy,  // 是否为买单
-                            order.eventId,
-                            order.outcomeId
-                        );
+                        IFundingPod(fundingPod)
+                            .unlockForOrder(
+                                order.user,
+                                ids[j], // orderId
+                                order.tokenAddress,
+                                order.side == OrderSide.Buy, // 是否为买单
+                                order.eventId,
+                                order.outcomeId
+                            );
                     }
                 }
             }
@@ -522,14 +524,15 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
 
                     // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingPod(fundingPod).unlockForOrder(
-                            order.user,
-                            ids[j],              // orderId
-                            order.tokenAddress,
-                            order.side == OrderSide.Buy,  // 是否为买单
-                            order.eventId,
-                            order.outcomeId
-                        );
+                        IFundingPod(fundingPod)
+                            .unlockForOrder(
+                                order.user,
+                                ids[j], // orderId
+                                order.tokenAddress,
+                                order.side == OrderSide.Buy, // 是否为买单
+                                order.eventId,
+                                order.outcomeId
+                            );
                     }
                 }
             }

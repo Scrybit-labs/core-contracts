@@ -1653,6 +1653,276 @@ AdminFeeVault 记录收入
 
 ---
 
+## ✅ 完整修复报告 - 数据结构重构: outcomeId 改为使用 index
+
+---
+
+### 🎯 问题描述
+
+在之前的设计中，event 创建时需要传入 `outcomeIds` 数组（如 `[1, 2, 3, 4]`），但这种设计存在以下问题：
+
+1. **冗余**: outcomeId 不需要自定义，直接使用 index 更高效
+2. **Gas 成本**: 传输数组增加 Gas 消耗
+3. **复杂性**: 增加了不必要的参数处理逻辑
+4. **不一致**: 接口定义与实现不匹配
+
+---
+
+### 🔧 解决方案
+
+采用 **index-based outcome ID** 模型：
+
+#### 新的设计
+
+```
+createEvent(outcomeCount: 4)
+    ↓
+系统自动生成 outcomeId: [0, 1, 2, 3]
+    ↓
+用户下单使用 outcomeId: 0, 1, 2, 3
+```
+
+#### 优势
+
+1. **简化**: 只需传入 `outcomeCount`，系统自动生成 index
+2. **高效**: outcomeId = array index，访问 O(1)
+3. **省 Gas**: 不需要传输数组
+4. **清晰**: 逻辑更简单，代码更易维护
+
+---
+
+### 📝 修改详情
+
+#### 1. OrderBookPod.addEvent() 重构
+
+**文件**: `src/event/pod/OrderBookPod.sol` (Line 190-205)
+
+**修改前**:
+```solidity
+function addEvent(uint256 eventId, uint256[] calldata outcomeIds) external {
+    require(!supportedEvents[eventId], "OrderBookPod: event exists");
+    supportedEvents[eventId] = true;
+
+    EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
+    for (uint256 i = 0; i < outcomeCount; i++) {  // ❌ outcomeCount 未定义
+        supportedOutcomes[eventId][i] = true;
+        eventOrderBook.supportedOutcomes.push(i);
+    }
+
+    IFundingPod(fundingPod).registerEvent(eventId, outcomeIds);
+    emit EventAdded(eventId, outcomeIds);
+}
+```
+
+**修改后**:
+```solidity
+function addEvent(uint256 eventId, uint256 outcomeCount) external {
+    require(!supportedEvents[eventId], "OrderBookPod: event exists");
+    require(outcomeCount > 0, "OrderBookPod: outcomeCount must be greater than 0");
+    supportedEvents[eventId] = true;
+
+    EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
+    for (uint256 i = 0; i < outcomeCount; i++) {
+        supportedOutcomes[eventId][i] = true;
+        eventOrderBook.supportedOutcomes.push(i);
+    }
+
+    // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)
+    IFundingPod(fundingPod).registerEvent(eventId, outcomeCount);
+
+    emit EventAdded(eventId, outcomeCount);
+}
+```
+
+---
+
+#### 2. OrderBookPod.settleEvent() 变量名修复
+
+**文件**: `src/event/pod/OrderBookPod.sol` (Line 174-188)
+
+**问题**: 参数名为 `winningOutcomeId`，但使用了未定义的 `winningOutcomeIndex`
+
+**修改**:
+```solidity
+function settleEvent(uint256 eventId, uint256 winningOutcomeId) external onlyEventPod {
+    if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
+    if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
+    if (!supportedOutcomes[eventId][winningOutcomeId]) {
+        revert OutcomeNotSupported(eventId, winningOutcomeId);
+    }
+
+    eventSettled[eventId] = true;
+    eventResults[eventId] = winningOutcomeId;  // ✅ 修复
+
+    _cancelAllPendingOrders(eventId);
+    _settlePositions(eventId, winningOutcomeId);  // ✅ 修复
+
+    emit EventSettled(eventId, winningOutcomeId);  // ✅ 修复
+}
+```
+
+---
+
+#### 3. FundingPod.registerEvent() 重构
+
+**文件**: `src/event/pod/FundingPod.sol` (Line 168-180)
+
+**修改前**:
+```solidity
+/**
+ * @notice 注册事件的结果选项
+ * @param eventId 事件 ID
+ * @param outcomeIds 结果 ID 列表
+ */
+function registerEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookPod {
+    require(eventOutcomes[eventId].length == 0, "FundingPod: event already registered");
+    require(outcomeIds.length > 0, "FundingPod: empty outcomes");
+
+    for (uint256 i = 0; i < outcomeIds.length; i++) {
+        eventOutcomes[eventId].push(outcomeIds[i]);
+    }
+}
+```
+
+**修改后**:
+```solidity
+/**
+ * @notice 注册事件的结果选项
+ * @param eventId 事件 ID
+ * @param outcomeCount 结果数量
+ */
+function registerEvent(uint256 eventId, uint256 outcomeCount) external onlyOrderBookPod {
+    require(eventOutcomes[eventId].length == 0, "FundingPod: event already registered");
+    require(outcomeCount > 0, "FundingPod: empty outcomes");
+
+    for (uint256 i = 0; i < outcomeCount; i++) {
+        eventOutcomes[eventId].push(i);  // ✅ 直接使用 index 作为 outcomeId
+    }
+}
+```
+
+---
+
+#### 4. FundingPod 添加缺失的修饰符
+
+**文件**: `src/event/pod/FundingPod.sol` (Line 26-44)
+
+**问题**: `withdraw()` 函数使用了 `onlyFundingManager` 修饰符，但未定义
+
+**修改**: 添加修饰符定义
+```solidity
+// ============ Modifiers ============
+
+/// @notice 仅 FundingManager 可调用
+modifier onlyFundingManager() {
+    require(msg.sender == fundingManager, "FundingPod: only fundingManager");
+    _;
+}
+
+/// @notice 仅 OrderBookPod 可调用
+modifier onlyOrderBookPod() {
+    require(msg.sender == orderBookPod, "FundingPod: only orderBookPod");
+    _;
+}
+
+/// @notice 仅 EventPod 可调用
+modifier onlyEventPod() {
+    require(msg.sender == eventPod, "FundingPod: only eventPod");
+    _;
+}
+```
+
+---
+
+#### 5. IFundingPod 接口更新
+
+**文件**: `src/interfaces/event/IFundingPod.sol`
+
+**修改 1: registerEvent 接口** (Line 109-114)
+```solidity
+/**
+ * @notice 注册事件的结果选项
+ * @param eventId 事件 ID
+ * @param outcomeCount 结果数量
+ */
+function registerEvent(uint256 eventId, uint256 outcomeCount) external;
+```
+
+**修改 2: withdraw 接口** (Line 92-99)
+```solidity
+/**
+ * @notice 用户提现 (可通过 FundingManager 调用)
+ * @param user 用户地址
+ * @param tokenAddress Token 地址
+ * @param withdrawAddress 提现目标地址
+ * @param amount 金额
+ */
+function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount) external;
+```
+
+---
+
+#### 6. FundingManager 调用修复
+
+**文件**: `src/event/core/FundingManager.sol` (Line 178-179)
+
+**问题**: withdraw 调用缺少 user 参数
+
+**修改**:
+```solidity
+IFundingPod fundingPod = IFundingPod(fundingPodAddress);
+
+// 调用 Pod 的 withdraw 函数 (传入真实用户地址)
+fundingPod.withdraw(msg.sender, tokenAddress, payable(msg.sender), amount);
+```
+
+---
+
+### 📊 完整对比
+
+| 项目 | 修改前 | 修改后 |
+|------|--------|--------|
+| **Event 创建参数** | `uint256[] outcomeIds` | `uint256 outcomeCount` |
+| **outcomeId 来源** | 用户传入数组 | 系统自动生成 (0, 1, 2, ...) |
+| **Gas 成本** | 较高 (传输数组) | 较低 (传输单个数字) |
+| **访问效率** | 需要查找映射 | 直接使用 index (O(1)) |
+| **代码复杂度** | 较高 | 较低 |
+
+---
+
+### 🎉 修改总结
+
+**已完成**:
+1. ✅ OrderBookPod.addEvent() 函数签名和实现重构
+2. ✅ OrderBookPod.settleEvent() 变量名修复
+3. ✅ FundingPod.registerEvent() 改为使用 outcomeCount
+4. ✅ FundingPod 添加 onlyFundingManager 修饰符
+5. ✅ IFundingPod 接口更新 (registerEvent 和 withdraw)
+6. ✅ FundingManager withdraw 调用修复
+7. ✅ 编译验证通过
+
+**影响范围**:
+- ✅ OrderBookPod: 修改 addEvent 和 settleEvent
+- ✅ FundingPod: 修改 registerEvent 和修饰符
+- ✅ FundingManager: 修改 withdraw 调用
+- ✅ IFundingPod: 更新接口定义
+- ✅ OrderBookManager: 无需修改
+
+**验证结果**:
+```bash
+forge build
+✅ Compiler run successful with warnings
+✅ 无错误
+```
+
+**下一步建议**:
+1. 更新部署脚本，确保使用新的 `outcomeCount` 参数
+2. 更新前端代码，调用 createEvent 时传入 outcomeCount
+3. 更新文档，说明 outcomeId = index 的设计
+4. 编写测试验证新的数据结构
+
+---
+
 ## 🐛 关键 Bug 修复: 奖金池逻辑错误
 
 ---

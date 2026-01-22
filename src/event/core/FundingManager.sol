@@ -59,23 +59,23 @@ contract FundingManager is
      * @param eventPod EventPod 地址
      * @return fundingPod FundingPod 地址
      */
-    function deployFundingPod(
-        uint256 vendorId,
-        address vendorAddress,
-        address orderBookPod,
-        address eventPod
-    ) external onlyFactory returns (address fundingPod) {
+    function deployFundingPod(uint256 vendorId, address vendorAddress, address orderBookPod, address eventPod)
+        external
+        onlyFactory
+        returns (address fundingPod)
+    {
         require(vendorId > 0, "FundingManager: invalid vendorId");
         require(vendorToFundingPod[vendorId] == address(0), "FundingManager: pod already deployed");
 
         // 调用 PodDeployer
-        fundingPod = IPodDeployer(podDeployer).deployFundingPod(
-            vendorId,
-            vendorAddress,
-            address(this),  // fundingManager
-            orderBookPod,
-            eventPod
-        );
+        fundingPod = IPodDeployer(podDeployer)
+            .deployFundingPod(
+                vendorId,
+                vendorAddress,
+                address(this), // fundingManager
+                orderBookPod,
+                eventPod
+            );
 
         // 记录部署
         vendorToFundingPod[vendorId] = fundingPod;
@@ -121,7 +121,7 @@ contract FundingManager is
         IFundingPod fundingPod = IFundingPod(fundingPodAddress);
 
         // 转账 ETH 到 Pod
-        (bool sent, ) = address(fundingPod).call{value: msg.value}("");
+        (bool sent,) = address(fundingPod).call{value: msg.value}("");
         require(sent, "FundingManager: failed to send ETH");
 
         // 调用 Pod 的 deposit 函数 (pod will use msg.sender internally)
@@ -136,11 +136,11 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function depositErc20IntoVendorPod(
-        uint256 vendorId,
-        IERC20 tokenAddress,
-        uint256 amount
-    ) external whenNotPaused nonReentrant {
+    function depositErc20IntoVendorPod(uint256 vendorId, IERC20 tokenAddress, uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+    {
         require(amount > 0, "FundingManager: deposit amount must be greater than 0");
 
         // 从内部映射获取 vendor 的 FundingPod
@@ -162,11 +162,11 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function withdrawFromVendorPod(
-        uint256 vendorId,
-        address tokenAddress,
-        uint256 amount
-    ) external whenNotPaused nonReentrant {
+    function withdrawFromVendorPod(uint256 vendorId, address tokenAddress, uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+    {
         require(amount > 0, "FundingManager: withdraw amount must be greater than 0");
 
         // 从内部映射获取 vendor 的 FundingPod
@@ -175,8 +175,8 @@ contract FundingManager is
 
         IFundingPod fundingPod = IFundingPod(fundingPodAddress);
 
-        // 调用 Pod 的 withdraw 函数 (pod will use msg.sender internally for user auth)
-        fundingPod.withdraw(tokenAddress, payable(msg.sender), amount);
+        // 调用 Pod 的 withdraw 函数 (传入真实用户地址)
+        fundingPod.withdraw(msg.sender, tokenAddress, payable(msg.sender), amount);
     }
 
     // ============ 虚拟 Long Token 管理 Virtual Long Token Management ============
@@ -188,12 +188,11 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @param amount 铸造数量
      */
-    function mintCompleteSet(
-        IFundingPod fundingPod,
-        uint256 eventId,
-        address tokenAddress,
-        uint256 amount
-    ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
+    function mintCompleteSet(IFundingPod fundingPod, uint256 eventId, address tokenAddress, uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+    {
         require(amount > 0, "FundingManager: mint amount must be greater than 0");
 
         // 调用 Pod 的 mintCompleteSet 函数
@@ -207,12 +206,11 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @param amount 销毁数量
      */
-    function burnCompleteSet(
-        IFundingPod fundingPod,
-        uint256 eventId,
-        address tokenAddress,
-        uint256 amount
-    ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
+    function burnCompleteSet(IFundingPod fundingPod, uint256 eventId, address tokenAddress, uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+    {
         require(amount > 0, "FundingManager: burn amount must be greater than 0");
 
         // 调用 Pod 的 burnCompleteSet 函数
@@ -227,10 +225,11 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @return balance 总余额
      */
-    function getPodBalance(
-        IFundingPod fundingPod,
-        address tokenAddress
-    ) external view returns (uint256) {
+    function getVendorPodBalance(uint256 vendorId, address tokenAddress) external view returns (uint256) {
+        address fundingPodAddress = vendorToFundingPod[vendorId];
+        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
+
+        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
         return fundingPod.tokenBalances(tokenAddress);
     }
 
@@ -241,11 +240,11 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @return balance 可用余额
      */
-    function getUserBalance(
-        IFundingPod fundingPod,
-        address user,
-        address tokenAddress
-    ) external view returns (uint256) {
+    function getUserBalance(IFundingPod fundingPod, address user, address tokenAddress)
+        external
+        view
+        returns (uint256)
+    {
         return fundingPod.getUserBalance(user, tokenAddress);
     }
 
@@ -275,24 +274,12 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @return pool 奖金池金额
      */
-    function getEventPrizePool(
-        IFundingPod fundingPod,
-        uint256 eventId,
-        address tokenAddress
-    ) external view returns (uint256) {
+    function getEventPrizePool(IFundingPod fundingPod, uint256 eventId, address tokenAddress)
+        external
+        view
+        returns (uint256)
+    {
         return fundingPod.getEventPrizePool(eventId, tokenAddress);
-    }
-
-    /**
-     * @notice 获取白名单 Pod 数量
-     * @return count Pod 数量
-     */
-    function getWhitelistedPodCount() external view returns (uint256) {
-        return whitelistedPods.length;
-    }
-
-        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
-        return fundingPod.tokenBalances(tokenAddress);
     }
 
     // ============ 管理功能 Admin Functions ============
