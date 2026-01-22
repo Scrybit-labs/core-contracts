@@ -10,33 +10,16 @@ interface IFeeVaultPod {
     // ============ 事件 Events ============
 
     /// @notice 手续费收取事件
-    event FeeCollected(
-        address indexed token,
-        address indexed payer,
-        uint256 amount,
-        uint256 eventId,
-        string feeType
-    );
+    event FeeCollected(address indexed token, address indexed payer, uint256 amount, uint256 eventId, string feeType);
 
     /// @notice 手续费提取事件
-    event FeeWithdrawn(
-        address indexed token,
-        address indexed recipient,
-        uint256 amount
-    );
+    event FeeWithdrawn(address indexed token, address indexed recipient, uint256 amount);
 
     /// @notice 手续费率更新事件
-    event FeeRateUpdated(
-        string indexed feeType,
-        uint256 oldRate,
-        uint256 newRate
-    );
+    event FeeRateUpdated(string indexed feeType, uint256 oldRate, uint256 newRate);
 
     /// @notice 手续费接收者更新事件
-    event FeeRecipientUpdated(
-        address indexed oldRecipient,
-        address indexed newRecipient
-    );
+    event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
 
     // ============ 错误 Errors ============
 
@@ -69,11 +52,7 @@ interface IFeeVaultPod {
      * @param recipient 接收者地址
      * @param amount 提取金额
      */
-    function withdrawFee(
-        address token,
-        address recipient,
-        uint256 amount
-    ) external;
+    function withdrawFee(address token, address recipient, uint256 amount) external;
 
     /**
      * @notice 设置手续费率
@@ -116,8 +95,5 @@ interface IFeeVaultPod {
      * @param feeType 手续费类型
      * @return fee 手续费金额
      */
-    function calculateFee(
-        uint256 amount,
-        string calldata feeType
-    ) external view returns (uint256 fee);
+    function calculateFee(uint256 amount, string calldata feeType) external view returns (uint256 fee);
 }

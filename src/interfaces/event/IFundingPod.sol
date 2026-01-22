@@ -25,12 +25,20 @@ interface IFundingPod {
 
     /// @notice 资金锁定事件
     event FundsLocked(
-        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint256 outcomeId
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 indexed eventId,
+        uint256 outcomeId
     );
 
     /// @notice 资金解锁事件
     event FundsUnlocked(
-        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint256 outcomeId
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 indexed eventId,
+        uint256 outcomeId
     );
 
     /// @notice 订单结算事件
@@ -57,21 +65,19 @@ interface IFundingPod {
     // ============ 基础功能 Basic Functions ============
 
     /**
-     * @notice 用户入金
-     * @param user 用户地址 (由 FundingManager 传入)
+     * @notice 用户入金 (Public - users can call directly)
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function deposit(address user, address tokenAddress, uint256 amount) external;
+    function deposit(address tokenAddress, uint256 amount) external payable;
 
     /**
-     * @notice 用户提现
-     * @param user 用户地址 (由 FundingManager 传入)
+     * @notice 用户提现 (Public - users can call directly)
      * @param tokenAddress Token 地址
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
-    function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount) external;
+    function withdraw(address tokenAddress, address payable withdrawAddress, uint256 amount) external;
 
     /**
      * @notice 设置支持的 ERC20 Token
@@ -90,7 +96,13 @@ interface IFundingPod {
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
      */
-    function lockOnOrderPlaced(address user, address token, uint256 amount, uint256 eventId, uint256 outcomeId) external;
+    function lockOnOrderPlaced(
+        address user,
+        address token,
+        uint256 amount,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external;
 
     /**
      * @notice 撤单时解锁资金
@@ -100,8 +112,13 @@ interface IFundingPod {
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
      */
-    function unlockOnOrderCancelled(address user, address token, uint256 amount, uint256 eventId, uint256 outcomeId)
-        external;
+    function unlockOnOrderCancelled(
+        address user,
+        address token,
+        uint256 amount,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external;
 
     /**
      * @notice 撮合成交时结算资金
@@ -166,10 +183,12 @@ interface IFundingPod {
      * @param outcomeId 结果 ID
      * @return locked 锁定金额
      */
-    function getLockedBalance(address user, address token, uint256 eventId, uint256 outcomeId)
-        external
-        view
-        returns (uint256);
+    function getLockedBalance(
+        address user,
+        address token,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external view returns (uint256);
 
     /**
      * @notice 获取事件奖金池

@@ -88,9 +88,4 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
 
     /// @notice 事件结果: eventId => winningOutcomeId
     mapping(uint256 => uint256) public eventResults;
-
-    // ============ 预留升级空间 Upgrade Reserve ============
-
-    /// @notice 预留 storage slots
-    uint256[40] private _gap;
 }

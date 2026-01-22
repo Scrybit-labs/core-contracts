@@ -13,85 +13,71 @@ import "./IFundingPod.sol";
 interface IFundingManager {
     // ============ 事件 Events ============
 
-    /// @notice Pod 添加到白名单事件
-    event PodWhitelisted(address indexed pod);
+    /// @notice FundingPod 部署事件
+    event FundingPodDeployed(uint256 indexed vendorId, address indexed fundingPod);
 
-    /// @notice Pod 从白名单移除事件
-    event PodRemovedFromWhitelist(address indexed pod);
-
-    // ============ Pod 管理功能 ============
+    // ============ Pod 部署功能 ============
 
     /**
-     * @notice 添加 Pod 到白名单
-     * @param fundingPodsToWhitelist Pod 地址列表
-     * @param thirdPartyTransfersForbiddenValues 是否禁止第三方转账(预留)
+     * @notice 部署 FundingPod (仅 Factory 可调用)
+     * @param vendorId Vendor ID
+     * @param vendorAddress Vendor 地址
+     * @param orderBookPod OrderBookPod 地址
+     * @param eventPod EventPod 地址
+     * @return fundingPod FundingPod 地址
      */
-    function addStrategiesToDepositWhitelist(
-        IFundingPod[] calldata fundingPodsToWhitelist,
-        bool[] calldata thirdPartyTransfersForbiddenValues
-    ) external;
+    function deployFundingPod(
+        uint256 vendorId,
+        address vendorAddress,
+        address orderBookPod,
+        address eventPod
+    ) external returns (address fundingPod);
 
     /**
-     * @notice 从白名单移除 Pod
-     * @param fundingPodsToRemoveFromWhitelist Pod 地址列表
+     * @notice 获取 vendor 的 FundingPod 地址
+     * @param vendorId Vendor ID
+     * @return fundingPod FundingPod 地址
      */
-    function removeStrategiesFromDepositWhitelist(IFundingPod[] calldata fundingPodsToRemoveFromWhitelist) external;
+    function getVendorFundingPod(uint256 vendorId) external view returns (address);
 
     /**
-     * @notice 检查 Pod 是否在白名单中
-     * @param fundingPod Pod 地址
-     * @return isWhitelisted 是否在白名单
+     * @notice 设置 PodDeployer 地址
+     * @param _podDeployer PodDeployer 合约地址
      */
-    function isPodWhitelisted(IFundingPod fundingPod) external view returns (bool);
+    function setPodDeployer(address _podDeployer) external;
 
     // ============ 入金功能 Deposit Functions ============
 
     /**
-     * @notice ETH 入金到 Pod
-     * @param fundingPod 目标 Pod
+     * @notice ETH 入金到 Vendor 的 Pod
+     * @param vendorId Vendor ID
      * @return success 是否成功
      */
-    function depositEthIntoPod(IFundingPod fundingPod) external payable returns (bool);
+    function depositEthIntoVendorPod(uint256 vendorId) external payable returns (bool);
 
     /**
-     * @notice ERC20 Token 入金到 Pod
-     * @param fundingPod 目标 Pod
+     * @notice ERC20 Token 入金到 Vendor 的 Pod
+     * @param vendorId Vendor ID
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function depositErc20IntoPod(IFundingPod fundingPod, IERC20 tokenAddress, uint256 amount) external;
-
-    // ============ 提现功能 Withdraw Functions ============
+    function depositErc20IntoVendorPod(uint256 vendorId, IERC20 tokenAddress, uint256 amount) external;
 
     /**
-     * @notice 从 Pod 提现
-     * @param fundingPod Pod 地址
+     * @notice 从 Vendor 的 Pod 提现
+     * @param vendorId Vendor ID
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function withdrawFromPod(IFundingPod fundingPod, address tokenAddress, uint256 amount) external;
-
-    /**
-     * @notice 紧急提现(管理员功能)
-     * @param fundingPod Pod 地址
-     * @param tokenAddress Token 地址
-     * @param recipient 接收地址
-     * @param amount 金额
-     */
-    function emergencyWithdraw(
-        IFundingPod fundingPod,
-        address tokenAddress,
-        address recipient,
-        uint256 amount
-    ) external;
+    function withdrawFromVendorPod(uint256 vendorId, address tokenAddress, uint256 amount) external;
 
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 获取 Pod 总余额
-     * @param fundingPod Pod 地址
+     * @notice 获取 Vendor Pod 的总余额
+     * @param vendorId Vendor ID
      * @param tokenAddress Token 地址
      * @return balance 总余额
      */
-    function getPodBalance(IFundingPod fundingPod, address tokenAddress) external view returns (uint256);
+    function getVendorPodBalance(uint256 vendorId, address tokenAddress) external view returns (uint256);
 }

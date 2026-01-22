@@ -10,41 +10,19 @@ interface IAdminFeeVault {
     // ============ 事件 Events ============
 
     /// @notice 手续费收集事件
-    event FeeCollected(
-        address indexed token,
-        address indexed from,
-        uint256 amount,
-        string category
-    );
+    event FeeCollected(address indexed token, address indexed from, uint256 amount, string category);
 
     /// @notice 手续费分配事件
-    event FeeDistributed(
-        address indexed token,
-        address indexed recipient,
-        uint256 amount,
-        string category
-    );
+    event FeeDistributed(address indexed token, address indexed recipient, uint256 amount, string category);
 
     /// @notice 手续费提取事件
-    event FeeWithdrawn(
-        address indexed token,
-        address indexed recipient,
-        uint256 amount
-    );
+    event FeeWithdrawn(address indexed token, address indexed recipient, uint256 amount);
 
     /// @notice 受益人更新事件
-    event BeneficiaryUpdated(
-        string indexed role,
-        address indexed oldBeneficiary,
-        address indexed newBeneficiary
-    );
+    event BeneficiaryUpdated(string indexed role, address indexed oldBeneficiary, address indexed newBeneficiary);
 
     /// @notice 分配比例更新事件
-    event AllocationRatioUpdated(
-        string indexed role,
-        uint256 oldRatio,
-        uint256 newRatio
-    );
+    event AllocationRatioUpdated(string indexed role, uint256 oldRatio, uint256 newRatio);
 
     // ============ 错误 Errors ============
 
@@ -62,11 +40,7 @@ interface IAdminFeeVault {
      * @param amount 金额
      * @param category 类别("trade", "settlement", etc.)
      */
-    function collectFeeFromPod(
-        address token,
-        uint256 amount,
-        string calldata category
-    ) external;
+    function collectFeeFromPod(address token, uint256 amount, string calldata category) external;
 
     /**
      * @notice 分配手续费给受益人
@@ -80,31 +54,21 @@ interface IAdminFeeVault {
      * @param recipient 接收者地址
      * @param amount 金额
      */
-    function withdraw(
-        address token,
-        address recipient,
-        uint256 amount
-    ) external;
+    function withdraw(address token, address recipient, uint256 amount) external;
 
     /**
      * @notice 设置受益人地址
      * @param role 角色("treasury", "team", "liquidity", etc.)
      * @param beneficiary 受益人地址
      */
-    function setBeneficiary(
-        string calldata role,
-        address beneficiary
-    ) external;
+    function setBeneficiary(string calldata role, address beneficiary) external;
 
     /**
      * @notice 设置分配比例
      * @param role 角色
      * @param ratio 比例(基点, 0-10000)
      */
-    function setAllocationRatio(
-        string calldata role,
-        uint256 ratio
-    ) external;
+    function setAllocationRatio(string calldata role, uint256 ratio) external;
 
     /**
      * @notice 添加授权的 Pod

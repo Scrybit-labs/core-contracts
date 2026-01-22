@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "./IEventPod.sol";
+import "./IPodFactory.sol";
 
 /**
  * @title IEventManager
- * @notice 事件管理器接口 - 负责事件生命周期管理和 Pod 路由
- * @dev Manager 层负责协调,Pod 层负责执行
+ * @notice Vendor Registry 接口 - 管理 vendor 注册和平台配置
+ * @dev Vendors 直接与其 pods 交互,EventManager 仅作为注册表
  */
 interface IEventManager {
     // ============ 事件 Events ============
 
-    /// @notice Pod 添加到白名单事件
-    event PodWhitelisted(address indexed pod);
+    /// @notice EventPod 部署事件
+    event EventPodDeployed(uint256 indexed vendorId, address indexed eventPod);
 
-    /// @notice Pod 从白名单移除事件
-    event PodRemovedFromWhitelist(address indexed pod);
+    /// @notice Vendor 注册事件
+    event VendorRegistered(uint256 indexed vendorId);
+
+    /// @notice Vendor 注销事件
+    event VendorUnregistered(uint256 indexed vendorId);
 
     /// @notice 预言机注册事件
     event OracleRegistered(address indexed oracle);
@@ -23,34 +26,42 @@ interface IEventManager {
     /// @notice 预言机移除事件
     event OracleRemoved(address indexed oracle);
 
-    /// @notice 事件创建事件
-    event EventCreatedByManager(
-        uint256 indexed eventId,
-        address indexed pod,
-        address indexed creator,
-        string title
-    );
-
-    // ============ Pod 管理功能 ============
+    // ============ Pod 部署功能 ============
 
     /**
-     * @notice 添加 Pod 到白名单
-     * @param pod EventPod 合约地址
+     * @notice 部署 EventPod (仅 Factory 可调用)
+     * @param vendorId Vendor ID
+     * @param vendorAddress Vendor 地址
+     * @return eventPod EventPod 地址
      */
-    function addPodToWhitelist(IEventPod pod) external;
+    function deployEventPod(uint256 vendorId, address vendorAddress) external returns (address eventPod);
 
     /**
-     * @notice 从白名单移除 Pod
-     * @param pod EventPod 合约地址
+     * @notice 获取 vendor 的 EventPod 地址
+     * @param vendorId Vendor ID
+     * @return eventPod EventPod 地址
      */
-    function removePodFromWhitelist(IEventPod pod) external;
+    function getVendorEventPod(uint256 vendorId) external view returns (address);
 
     /**
-     * @notice 检查 Pod 是否在白名单中
-     * @param pod EventPod 合约地址
-     * @return isWhitelisted 是否在白名单
+     * @notice 设置 PodDeployer 地址
+     * @param _podDeployer PodDeployer 合约地址
      */
-    function isPodWhitelisted(IEventPod pod) external view returns (bool);
+    function setPodDeployer(address _podDeployer) external;
+
+    // ============ Vendor 管理功能 ============
+
+    /**
+     * @notice 注册 vendor
+     * @param vendorId Vendor ID
+     */
+    function registerVendor(uint256 vendorId) external;
+
+    /**
+     * @notice 注销 vendor
+     * @param vendorId Vendor ID
+     */
+    function unregisterVendor(uint256 vendorId) external;
 
     // ============ 预言机管理功能 ============
 
@@ -73,46 +84,12 @@ interface IEventManager {
      */
     function isOracleAuthorized(address oracle) external view returns (bool);
 
-    // ============ 事件创建功能 ============
-
-    /**
-     * @notice 创建事件并分配到 Pod
-     * @param title 事件标题
-     * @param description 事件描述
-     * @param deadline 下注截止时间
-     * @param settlementTime 预计结算时间
-     * @param outcomeNames 结果选项名称列表
-     * @param outcomeDescriptions 结果选项描述列表
-     * @return eventId 创建的事件 ID
-     * @return assignedPod 分配的 Pod 地址
-     */
-    function createEvent(
-        string calldata title,
-        string calldata description,
-        uint256 deadline,
-        uint256 settlementTime,
-        string[] calldata outcomeNames,
-        string[] calldata outcomeDescriptions
-    ) external returns (uint256 eventId, IEventPod assignedPod);
-
     // ============ 查询功能 ============
 
     /**
-     * @notice 获取事件所属的 Pod
-     * @param eventId 事件 ID
-     * @return pod EventPod 合约地址
+     * @notice 获取 vendor 的 pod set
+     * @param vendorId Vendor ID
+     * @return podSet Vendor 的 pod set 信息
      */
-    function getEventPod(uint256 eventId) external view returns (IEventPod);
-
-    /**
-     * @notice 获取下一个事件 ID
-     * @return nextId 下一个事件 ID
-     */
-    function getNextEventId() external view returns (uint256);
-
-    /**
-     * @notice 获取所有白名单 Pod 数量
-     * @return count Pod 数量
-     */
-    function getWhitelistedPodCount() external view returns (uint256);
+    function getVendorPodSet(uint256 vendorId) external view returns (IPodFactory.VendorPodSet memory);
 }

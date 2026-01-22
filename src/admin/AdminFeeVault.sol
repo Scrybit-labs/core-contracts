@@ -120,11 +120,7 @@ contract AdminFeeVault is
      * @param recipient 接收者地址
      * @param amount 金额
      */
-    function withdraw(
-        address token,
-        address recipient,
-        uint256 amount
-    ) external nonReentrant {
+    function withdraw(address token, address recipient, uint256 amount) external nonReentrant {
         if (recipient == address(0)) revert InvalidAddress(recipient);
         if (amount == 0) revert InvalidAmount(amount);
 
@@ -157,10 +153,7 @@ contract AdminFeeVault is
      * @param role 角色
      * @param beneficiary 受益人地址
      */
-    function setBeneficiary(
-        string calldata role,
-        address beneficiary
-    ) external onlyOwner {
+    function setBeneficiary(string calldata role, address beneficiary) external onlyOwner {
         _setBeneficiary(role, beneficiary);
     }
 
@@ -189,10 +182,7 @@ contract AdminFeeVault is
      * @param role 角色
      * @param ratio 比例(基点)
      */
-    function setAllocationRatio(
-        string calldata role,
-        uint256 ratio
-    ) external onlyOwner {
+    function setAllocationRatio(string calldata role, uint256 ratio) external onlyOwner {
         _setAllocationRatio(role, ratio);
     }
 
@@ -333,10 +323,7 @@ contract AdminFeeVault is
      * @param token Token 地址
      * @return balance 余额
      */
-    function getBeneficiaryBalance(
-        address beneficiary,
-        address token
-    ) external view returns (uint256 balance) {
+    function getBeneficiaryBalance(address beneficiary, address token) external view returns (uint256 balance) {
         return beneficiaryBalances[beneficiary][token];
     }
 

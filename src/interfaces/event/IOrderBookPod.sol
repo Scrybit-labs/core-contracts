@@ -48,15 +48,11 @@ interface IOrderBookPod {
         uint256 amount
     );
 
-    event OrderCancelled(
-        uint256 indexed orderId,
-        address indexed user,
-        uint256 cancelledAmount
-    );
+    event OrderCancelled(uint256 indexed orderId, address indexed user, uint256 cancelledAmount);
 
-    event EventSettled(uint256 indexed eventId, uint256 winningOutcomeId);
+    event EventSettled(uint256 indexed eventId, uint256 winningOutcomeIndex);
 
-    event EventAdded(uint256 indexed eventId, uint256[] outcomeIds);
+    event EventAdded(uint256 indexed eventId, uint256 outcomeCount);
 
     error EventNotSupported(uint256 eventId);
     error OutcomeNotSupported(uint256 eventId, uint256 outcomeId);
@@ -69,8 +65,17 @@ interface IOrderBookPod {
     error EventMismatch(uint256 eventId1, uint256 eventId2);
     error OutcomeMismatch(uint256 outcomeId1, uint256 outcomeId2);
 
+    /**
+     * @notice 下单 (Public - users can call directly)
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @param side 买卖方向
+     * @param price 价格
+     * @param amount 数量
+     * @param tokenAddress Token 地址
+     * @return orderId 订单 ID
+     */
     function placeOrder(
-        address user,
         uint256 eventId,
         uint256 outcomeId,
         OrderSide side,
@@ -81,19 +86,13 @@ interface IOrderBookPod {
 
     function cancelOrder(uint256 orderId) external;
 
-    function settleEvent(uint256 eventId, uint256 winningOutcomeId) external;
+    function settleEvent(uint256 eventId, uint256 winningOutcomeIndex) external;
 
-    function addEvent(uint256 eventId, uint256[] calldata outcomeIds) external;
+    function addEvent(uint256 eventId, uint256 outcomeCount) external;
 
-    function getBestBid(
-        uint256 eventId,
-        uint256 outcomeId
-    ) external view returns (uint256 price, uint256 amount);
+    function getBestBid(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount);
 
-    function getBestAsk(
-        uint256 eventId,
-        uint256 outcomeId
-    ) external view returns (uint256 price, uint256 amount);
+    function getBestAsk(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount);
 
     /**
      * @notice 获取订单信息
@@ -109,11 +108,7 @@ interface IOrderBookPod {
      * @param user 用户地址
      * @return position 持仓数量
      */
-    function getPosition(
-        uint256 eventId,
-        uint256 outcomeId,
-        address user
-    ) external view returns (uint256 position);
+    function getPosition(uint256 eventId, uint256 outcomeId, address user) external view returns (uint256 position);
 
     /**
      * @notice 设置 FundingPod 地址

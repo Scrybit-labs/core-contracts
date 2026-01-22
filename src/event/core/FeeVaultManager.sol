@@ -7,23 +7,19 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "./FeeVaultManagerStorage.sol";
 import "../../interfaces/event/IFeeVaultPod.sol";
+import "../../interfaces/event/IPodDeployer.sol";
 
 /**
  * @title FeeVaultManager
  * @notice 手续费管理器 - 负责 Pod 路由和手续费管理
  * @dev Manager 层负责协调,Pod 层负责执行
  */
-contract FeeVaultManager is
-    Initializable,
-    OwnableUpgradeable,
-    PausableUpgradeable,
-    FeeVaultManagerStorage
-{
+contract FeeVaultManager is Initializable, OwnableUpgradeable, PausableUpgradeable, FeeVaultManagerStorage {
     // ============ Modifiers ============
 
-    /// @notice 仅白名单 Pod 可调用
-    modifier onlyWhitelistedPod(IFeeVaultPod pod) {
-        require(podIsWhitelisted[pod], "FeeVaultManager: pod not whitelisted");
+    /// @notice 仅 Factory 可调用
+    modifier onlyFactory() {
+        require(msg.sender == factory, "FeeVaultManager: only factory");
         _;
     }
 
@@ -42,53 +38,66 @@ contract FeeVaultManager is
         __Pausable_init();
     }
 
-    // ============ Pod 管理功能 ============
+    // ============ Pod 部署功能 Pod Deployment ============
 
     /**
-     * @notice 添加 Pod 到白名单
-     * @param pod Pod 地址
+     * @notice 部署 FeeVaultPod (仅 Factory 可调用)
+     * @param vendorId Vendor ID
+     * @param vendorAddress Vendor 地址
+     * @param feeRecipient 手续费接收地址
+     * @param orderBookPod OrderBookPod 地址
+     * @return feeVaultPod FeeVaultPod 地址
      */
-    function addPodToWhitelist(IFeeVaultPod pod) external onlyOwner {
-        require(address(pod) != address(0), "FeeVaultManager: invalid pod address");
-        require(!podIsWhitelisted[pod], "FeeVaultManager: pod already whitelisted");
+    function deployFeeVaultPod(
+        uint256 vendorId,
+        address vendorAddress,
+        address feeRecipient,
+        address orderBookPod
+    ) external onlyFactory returns (address feeVaultPod) {
+        require(vendorId > 0, "FeeVaultManager: invalid vendorId");
+        require(vendorToFeeVaultPod[vendorId] == address(0), "FeeVaultManager: pod already deployed");
 
-        podIsWhitelisted[pod] = true;
-        emit PodWhitelisted(address(pod));
-    }
-
-    /**
-     * @notice 从白名单移除 Pod
-     * @param pod Pod 地址
-     */
-    function removePodFromWhitelist(IFeeVaultPod pod) external onlyOwner {
-        require(podIsWhitelisted[pod], "FeeVaultManager: pod not whitelisted");
-
-        podIsWhitelisted[pod] = false;
-        emit PodRemovedFromWhitelist(address(pod));
-    }
-
-    /**
-     * @notice 注册事件到 Pod
-     * @param pod Pod 地址
-     * @param eventId 事件 ID
-     */
-    function registerEventToPod(
-        IFeeVaultPod pod,
-        uint256 eventId
-    ) external onlyOwner onlyWhitelistedPod(pod) {
-        require(
-            address(eventIdToPod[eventId]) == address(0),
-            "FeeVaultManager: event already registered"
+        // 调用 PodDeployer
+        feeVaultPod = IPodDeployer(podDeployer).deployFeeVaultPod(
+            vendorId,
+            vendorAddress,
+            address(this),  // feeVaultManager
+            orderBookPod,
+            feeRecipient
         );
 
-        eventIdToPod[eventId] = pod;
-        emit EventRegisteredToPod(eventId, address(pod));
+        // 记录部署
+        vendorToFeeVaultPod[vendorId] = feeVaultPod;
+        feeVaultPodIsDeployed[feeVaultPod] = true;
+
+        emit FeeVaultPodDeployed(vendorId, feeVaultPod);
+
+        return feeVaultPod;
+    }
+
+    /**
+     * @notice 获取 vendor 的 FeeVaultPod 地址
+     * @param vendorId Vendor ID
+     * @return feeVaultPod FeeVaultPod 地址
+     */
+    function getVendorFeeVaultPod(uint256 vendorId) external view returns (address) {
+        return vendorToFeeVaultPod[vendorId];
+    }
+
+    /**
+     * @notice 设置 PodDeployer 地址
+     * @param _podDeployer PodDeployer 合约地址
+     */
+    function setPodDeployer(address _podDeployer) external onlyOwner {
+        require(_podDeployer != address(0), "FeeVaultManager: invalid podDeployer");
+        podDeployer = _podDeployer;
     }
 
     // ============ 手续费管理功能 ============
 
     /**
-     * @notice 收取手续费(通过路由到对应 Pod)
+     * @notice 收取手续费
+     * @param vendorId Vendor ID
      * @param eventId 事件 ID
      * @param token Token 地址
      * @param payer 支付者地址
@@ -96,76 +105,69 @@ contract FeeVaultManager is
      * @param feeType 手续费类型
      */
     function collectFee(
+        uint256 vendorId,
         uint256 eventId,
         address token,
         address payer,
         uint256 amount,
         string calldata feeType
     ) external whenNotPaused {
-        IFeeVaultPod pod = eventIdToPod[eventId];
-        require(
-            address(pod) != address(0),
-            "FeeVaultManager: event not mapped"
-        );
-        require(podIsWhitelisted[pod], "FeeVaultManager: pod not whitelisted");
+        address feeVaultPodAddress = vendorToFeeVaultPod[vendorId];
+        require(feeVaultPodAddress != address(0), "FeeVaultManager: vendor not found");
 
+        IFeeVaultPod pod = IFeeVaultPod(feeVaultPodAddress);
         pod.collectFee(token, payer, amount, eventId, feeType);
     }
 
     /**
      * @notice 提取手续费
-     * @param pod Pod 地址
+     * @param vendorId Vendor ID
      * @param token Token 地址
      * @param recipient 接收者地址
      * @param amount 提取金额
      */
     function withdrawFee(
-        IFeeVaultPod pod,
+        uint256 vendorId,
         address token,
         address recipient,
         uint256 amount
-    ) external onlyOwner onlyWhitelistedPod(pod) {
+    ) external onlyOwner {
         require(recipient != address(0), "FeeVaultManager: invalid recipient");
         require(amount > 0, "FeeVaultManager: invalid amount");
 
+        address feeVaultPodAddress = vendorToFeeVaultPod[vendorId];
+        require(feeVaultPodAddress != address(0), "FeeVaultManager: vendor not found");
+
+        IFeeVaultPod pod = IFeeVaultPod(feeVaultPodAddress);
         pod.withdrawFee(token, recipient, amount);
     }
 
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 检查 Pod 是否在白名单中
-     * @param pod Pod 地址
-     * @return isWhitelisted 是否在白名单
-     */
-    function isPodWhitelisted(IFeeVaultPod pod) external view returns (bool) {
-        return podIsWhitelisted[pod];
-    }
-
-    /**
-     * @notice 获取事件对应的 Pod
-     * @param eventId 事件 ID
-     * @return pod Pod 地址
-     */
-    function getEventPod(uint256 eventId) external view returns (IFeeVaultPod pod) {
-        return eventIdToPod[eventId];
-    }
-
-    /**
-     * @notice 获取 Pod 的手续费余额
-     * @param pod Pod 地址
+     * @notice 获取 Vendor Pod 的手续费余额
+     * @param vendorId Vendor ID
      * @param token Token 地址
      * @return balance 手续费余额
      */
-    function getPodFeeBalance(
-        IFeeVaultPod pod,
-        address token
-    ) external view returns (uint256 balance) {
-        require(podIsWhitelisted[pod], "FeeVaultManager: pod not whitelisted");
+    function getVendorPodFeeBalance(uint256 vendorId, address token) external view returns (uint256 balance) {
+        address feeVaultPodAddress = vendorToFeeVaultPod[vendorId];
+        require(feeVaultPodAddress != address(0), "FeeVaultManager: vendor not found");
+
+        IFeeVaultPod pod = IFeeVaultPod(feeVaultPodAddress);
         return pod.getFeeBalance(token);
     }
 
     // ============ 管理功能 Admin Functions ============
+
+    /**
+     * @notice 设置 PodFactory 地址
+     * @param _factory PodFactory 合约地址
+     */
+    function setFactory(address _factory) external onlyOwner {
+        require(_factory != address(0), "FeeVaultManager: invalid factory");
+        factory = _factory;
+    }
 
     /**
      * @notice 暂停合约

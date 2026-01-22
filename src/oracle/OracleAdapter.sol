@@ -31,9 +31,12 @@ contract OracleAdapter is
         _;
     }
 
-    /// @notice 仅 EventManager 可调用
-    modifier onlyEventManager() {
-        require(msg.sender == eventManager, "OracleAdapter: only eventManager");
+    /// @notice 仅 EventManager 或授权的 EventPod 可调用
+    modifier onlyEventManagerOrAuthorizedPod() {
+        require(
+            msg.sender == eventManager || authorizedEventPods[msg.sender],
+            "OracleAdapter: only eventManager or authorized EventPod"
+        );
         _;
     }
 
@@ -49,11 +52,7 @@ contract OracleAdapter is
      * @param _eventManager EventManager 地址
      * @param _oracleConsumer OracleConsumer 地址(EventPod)
      */
-    function initialize(
-        address initialOwner,
-        address _eventManager,
-        address _oracleConsumer
-    ) external initializer {
+    function initialize(address initialOwner, address _eventManager, address _oracleConsumer) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
 
@@ -79,7 +78,7 @@ contract OracleAdapter is
     function requestEventResult(
         uint256 eventId,
         string calldata eventDescription
-    ) external whenNotPaused onlyEventManager returns (bytes32 requestId) {
+    ) external whenNotPaused onlyEventManagerOrAuthorizedPod returns (bytes32 requestId) {
         if (eventId == 0) revert InvalidEventId(eventId);
 
         // 检查是否已存在请求
@@ -90,9 +89,7 @@ contract OracleAdapter is
         }
 
         // 生成请求 ID
-        requestId = keccak256(
-            abi.encodePacked(eventId, msg.sender, block.timestamp, totalRequests)
-        );
+        requestId = keccak256(abi.encodePacked(eventId, msg.sender, block.timestamp, totalRequests));
 
         // 创建请求
         requests[requestId] = OracleRequest({
@@ -102,7 +99,7 @@ contract OracleAdapter is
             eventDescription: eventDescription,
             timestamp: block.timestamp,
             fulfilled: false,
-            winningOutcomeId: 0,
+            winningOutcomeIndex: 0,
             submitter: address(0)
         });
 
@@ -116,13 +113,13 @@ contract OracleAdapter is
      * @notice 提交事件结果
      * @param requestId 请求 ID
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果 ID
      * @param proof 证明数据
      */
     function submitResult(
         bytes32 requestId,
         uint256 eventId,
-        uint256 winningOutcomeId,
+        uint256 winningOutcomeIndex,
         bytes calldata proof
     ) external whenNotPaused onlyAuthorizedOracle nonReentrant {
         OracleRequest storage request = requests[requestId];
@@ -131,7 +128,7 @@ contract OracleAdapter is
         if (request.requestId == bytes32(0)) revert RequestNotFound(requestId);
         if (request.eventId != eventId) revert InvalidEventId(eventId);
         if (request.fulfilled) revert ResultAlreadySubmitted(requestId);
-        if (winningOutcomeId == 0) revert InvalidOutcomeId(winningOutcomeId);
+        if (winningOutcomeIndex == 0) revert InvalidOutcomeId(winningOutcomeIndex);
 
         // 检查超时
         if (block.timestamp > request.timestamp + requestTimeout) {
@@ -140,16 +137,16 @@ contract OracleAdapter is
 
         // 验证证明(可选,根据实际需求实现)
         if (proof.length > 0) {
-            _verifyProof(requestId, winningOutcomeId, proof);
+            _verifyProof(requestId, winningOutcomeIndex, proof);
         }
 
         // 更新请求状态
         request.fulfilled = true;
-        request.winningOutcomeId = winningOutcomeId;
+        request.winningOutcomeIndex = winningOutcomeIndex;
         request.submitter = msg.sender;
 
         // 更新结果
-        eventResults[eventId] = winningOutcomeId;
+        eventResults[eventId] = winningOutcomeIndex;
         eventResultConfirmed[eventId] = true;
 
         // 更新统计
@@ -157,11 +154,11 @@ contract OracleAdapter is
         oracleSubmissions[msg.sender]++;
         oracleReputation[msg.sender]++;
 
-        emit ResultSubmitted(requestId, eventId, winningOutcomeId, msg.sender, block.timestamp);
-        emit ResultConfirmed(eventId, winningOutcomeId, 1, block.timestamp);
+        emit ResultSubmitted(requestId, eventId, winningOutcomeIndex, msg.sender, block.timestamp);
+        emit ResultConfirmed(eventId, winningOutcomeIndex, 1, block.timestamp);
 
         // 回调 OracleConsumer
-        _fulfillConsumer(eventId, winningOutcomeId, proof);
+        _fulfillConsumer(eventId, winningOutcomeIndex, proof);
     }
 
     /**
@@ -172,10 +169,7 @@ contract OracleAdapter is
         OracleRequest storage request = requests[requestId];
 
         if (request.requestId == bytes32(0)) revert RequestNotFound(requestId);
-        require(
-            msg.sender == request.requester || msg.sender == owner(),
-            "OracleAdapter: unauthorized"
-        );
+        require(msg.sender == request.requester || msg.sender == owner(), "OracleAdapter: unauthorized");
         require(!request.fulfilled, "OracleAdapter: already fulfilled");
 
         // 标记为已完成(避免重复请求)
@@ -187,18 +181,14 @@ contract OracleAdapter is
     /**
      * @notice 内部函数: 验证证明
      * @param requestId 请求 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果 ID
      * @param proof 证明数据
      */
-    function _verifyProof(
-        bytes32 requestId,
-        uint256 winningOutcomeId,
-        bytes calldata proof
-    ) internal view {
+    function _verifyProof(bytes32 requestId, uint256 winningOutcomeIndex, bytes calldata proof) internal view {
         // 这里可以实现签名验证、Merkle Proof 验证等
         // 示例: 验证签名
         // (bytes32 r, bytes32 s, uint8 v) = abi.decode(proof, (bytes32, bytes32, uint8));
-        // bytes32 message = keccak256(abi.encodePacked(requestId, winningOutcomeId));
+        // bytes32 message = keccak256(abi.encodePacked(requestId, winningOutcomeIndex));
         // address signer = ecrecover(message, v, r, s);
         // require(authorizedOracles[signer], "Invalid proof");
 
@@ -212,19 +202,13 @@ contract OracleAdapter is
     /**
      * @notice 内部函数: 回调 OracleConsumer
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果 ID
      * @param proof 证明数据
      */
-    function _fulfillConsumer(
-        uint256 eventId,
-        uint256 winningOutcomeId,
-        bytes calldata proof
-    ) internal {
+    function _fulfillConsumer(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) internal {
         if (oracleConsumer == address(0)) return;
 
-        try
-            IOracleConsumer(oracleConsumer).fulfillResult(eventId, winningOutcomeId, proof)
-        {} catch {
+        try IOracleConsumer(oracleConsumer).fulfillResult(eventId, winningOutcomeIndex, proof) {} catch {
             // 如果回调失败,不影响结果记录
             // 链下服务可以监听 ResultSubmitted 事件并重试
         }
@@ -240,16 +224,9 @@ contract OracleAdapter is
      * @return timestamp 请求时间戳
      * @return fulfilled 是否已完成
      */
-    function getRequest(bytes32 requestId)
-        external
-        view
-        returns (
-            uint256 eventId,
-            address requester,
-            uint256 timestamp,
-            bool fulfilled
-        )
-    {
+    function getRequest(
+        bytes32 requestId
+    ) external view returns (uint256 eventId, address requester, uint256 timestamp, bool fulfilled) {
         OracleRequest storage request = requests[requestId];
         return (request.eventId, request.requester, request.timestamp, request.fulfilled);
     }
@@ -257,14 +234,10 @@ contract OracleAdapter is
     /**
      * @notice 获取事件结果
      * @param eventId 事件 ID
-     * @return winningOutcomeId 获胜结果 ID
+     * @return winningOutcomeIndex 获胜结果 ID
      * @return confirmed 是否已确认
      */
-    function getEventResult(uint256 eventId)
-        external
-        view
-        returns (uint256 winningOutcomeId, bool confirmed)
-    {
+    function getEventResult(uint256 eventId) external view returns (uint256 winningOutcomeIndex, bool confirmed) {
         return (eventResults[eventId], eventResultConfirmed[eventId]);
     }
 
@@ -273,11 +246,7 @@ contract OracleAdapter is
      * @param requestId 请求 ID
      * @return request 请求详情
      */
-    function getRequestDetails(bytes32 requestId)
-        external
-        view
-        returns (OracleRequest memory request)
-    {
+    function getRequestDetails(bytes32 requestId) external view returns (OracleRequest memory request) {
         return requests[requestId];
     }
 
@@ -307,13 +276,32 @@ contract OracleAdapter is
         // 从数组中移除
         for (uint256 i = 0; i < authorizedOraclesList.length; i++) {
             if (authorizedOraclesList[i] == oracle) {
-                authorizedOraclesList[i] = authorizedOraclesList[
-                    authorizedOraclesList.length - 1
-                ];
+                authorizedOraclesList[i] = authorizedOraclesList[authorizedOraclesList.length - 1];
                 authorizedOraclesList.pop();
                 break;
             }
         }
+    }
+
+    /**
+     * @notice 添加授权的 EventPod
+     * @param eventPod EventPod 地址
+     */
+    function addAuthorizedEventPod(address eventPod) external onlyOwner {
+        require(eventPod != address(0), "OracleAdapter: invalid address");
+        require(!authorizedEventPods[eventPod], "OracleAdapter: already authorized");
+
+        authorizedEventPods[eventPod] = true;
+    }
+
+    /**
+     * @notice 移除授权的 EventPod
+     * @param eventPod EventPod 地址
+     */
+    function removeAuthorizedEventPod(address eventPod) external onlyOwner {
+        require(authorizedEventPods[eventPod], "OracleAdapter: not authorized");
+
+        authorizedEventPods[eventPod] = false;
     }
 
     /**

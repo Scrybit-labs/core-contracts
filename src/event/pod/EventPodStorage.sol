@@ -6,16 +6,13 @@ import "../../interfaces/event/IEventPod.sol";
 /**
  * @title EventPodStorage
  * @notice EventPod 的存储层合约
- * @dev 存储与逻辑分离,便于合约升级
+ * @dev 存储与逻辑分离
  */
 abstract contract EventPodStorage is IEventPod {
     // ============ 状态变量 State Variables ============
 
     /// @notice 事件存储映射: eventId => Event
     mapping(uint256 => Event) internal events;
-
-    /// @notice 事件结果选项映射: eventId => outcomeId => Outcome
-    mapping(uint256 => mapping(uint256 => Outcome)) internal outcomes;
 
     /// @notice 事件是否存在映射
     mapping(uint256 => bool) public eventExists;
@@ -38,7 +35,15 @@ abstract contract EventPodStorage is IEventPod {
     /// @notice OracleAdapter 合约地址(用于验证预言机)
     address public oracleAdapter;
 
-    /// @notice 预留升级空间(OpenZeppelin 升级模式)
-    /// @dev 减去已使用的 slot 数量: 9 个映射/变量 = 9 slots
-    uint256[41] private _gap;
+    /// @notice Vendor ID (set during initialization)
+    uint256 public vendorId;
+
+    /// @notice Vendor owner address
+    address public vendorAddress;
+
+    /// @notice Per-pod event counter
+    uint256 public nextEventId;
+
+    /// @notice Event oracle request tracking: eventId => requestId
+    mapping(uint256 => bytes32) public eventOracleRequests;
 }

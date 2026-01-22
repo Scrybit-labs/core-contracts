@@ -13,10 +13,10 @@ abstract contract OracleManagerStorage is IOracleManager {
 
     /// @notice 适配器信息结构体
     struct AdapterInfo {
-        address adapter;        // 适配器地址
-        string name;           // 适配器名称
-        bool active;           // 是否激活
-        uint256 addedAt;       // 添加时间
+        address adapter; // 适配器地址
+        string name; // 适配器名称
+        bool active; // 是否激活
+        uint256 addedAt; // 添加时间
     }
 
     /// @notice 适配器映射: adapter => AdapterInfo

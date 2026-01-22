@@ -18,9 +18,9 @@ import "../../interfaces/oracle/IOracle.sol";
 contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracleConsumer {
     // ============ Modifiers ============
 
-    /// @notice 仅 EventManager 可调用
-    modifier onlyEventManager() {
-        require(msg.sender == eventManager, "EventPod: only eventManager");
+    /// @notice 仅 Vendor 可调用
+    modifier onlyVendor() {
+        require(msg.sender == vendorAddress, "EventPod: only vendor");
         _;
     }
 
@@ -45,50 +45,57 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
+     * @param _vendorId Vendor ID
      * @param _eventManager EventManager 合约地址
      * @param _orderBookManager OrderBookManager 合约地址
      */
-    function initialize(address initialOwner, address _eventManager, address _orderBookManager) external initializer {
+    function initialize(
+        address initialOwner,
+        uint256 _vendorId,
+        address _eventManager,
+        address _orderBookManager
+    ) external initializer {
         __Ownable_init(initialOwner);
-
         require(_eventManager != address(0), "EventPod: invalid eventManager");
         require(_orderBookManager != address(0), "EventPod: invalid orderBookManager");
+        require(_vendorId > 0, "EventPod: invalid vendorId");
 
+        vendorId = _vendorId;
+        vendorAddress = initialOwner;
         eventManager = _eventManager;
         orderBookManager = _orderBookManager;
+        nextEventId = 1; // Start from 1
     }
 
     // ============ 核心功能 Functions ============
 
     /**
-     * @notice 添加事件到 Pod
-     * @param eventId 事件 ID
+     * @notice 创建事件 (Vendor direct call)
      * @param title 事件标题
      * @param description 事件描述
      * @param deadline 下注截止时间
      * @param settlementTime 预计结算时间
-     * @param creator 创建者地址
-     * @param outcomeIds 结果选项 ID 列表
-     * @param outcomeNames 结果选项名称列表
-     * @param outcomeDescriptions 结果选项描述列表
+     * @param outcomes 结果选项数组
+     * @return eventId 生成的事件 ID
      */
-    function addEvent(
-        uint256 eventId,
+    function createEvent(
         string calldata title,
         string calldata description,
         uint256 deadline,
         uint256 settlementTime,
-        address creator,
-        uint256[] calldata outcomeIds,
-        string[] calldata outcomeNames,
-        string[] calldata outcomeDescriptions
-    ) external onlyEventManager {
-        require(!eventExists[eventId], "EventPod: event already exists");
-        require(outcomeIds.length == outcomeNames.length, "EventPod: outcomes length mismatch");
-        require(outcomeIds.length == outcomeDescriptions.length, "EventPod: descriptions length mismatch");
-        require(outcomeIds.length >= 2, "EventPod: at least 2 outcomes required");
+        Outcome[] calldata outcomes
+    ) external onlyVendor returns (uint256 eventId) {
+        // Validate parameters
+        require(bytes(title).length > 0, "EventPod: empty title");
+        require(deadline > block.timestamp, "EventPod: deadline must be in future");
+        require(settlementTime > deadline, "EventPod: settlementTime must be after deadline");
+        require(outcomes.length >= 2, "EventPod: at least 2 outcomes required");
+        require(outcomes.length <= 32, "EventPod: max 32 outcomes");
 
-        // 创建事件
+        // Generate event ID
+        eventId = nextEventId++;
+
+        // Create event
         Event storage newEvent = events[eventId];
         newEvent.eventId = eventId;
         newEvent.title = title;
@@ -96,28 +103,41 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
         newEvent.deadline = deadline;
         newEvent.settlementTime = settlementTime;
         newEvent.status = EventStatus.Created;
-        newEvent.creator = creator;
-        newEvent.outcomeIds = outcomeIds;
-        newEvent.winningOutcomeId = 0; // 未结算
+        newEvent.creator = vendorAddress;
+        newEvent.winningOutcomeIndex = 0;
+        newEvent.outcomes = outcomes;
 
-        // 存储结果选项
-        for (uint256 i = 0; i < outcomeIds.length; i++) {
-            uint256 outcomeId = outcomeIds[i];
-            outcomes[eventId][outcomeId] =
-                Outcome({outcomeId: outcomeId, name: outcomeNames[i], description: outcomeDescriptions[i]});
-        }
-
-        // 标记事件存在
+        // Mark event exists
         eventExists[eventId] = true;
 
-        // 添加到活跃列表
+        // Add to active list
         _addToActiveList(eventId);
 
-        // 注意: 事件注册到 OrderBookManager 由 EventManager 自动处理
-        // EventManager.createEvent() 会在创建事件后自动调用
-        // OrderBookManager.registerEventToPod() 来初始化订单簿
+        emit EventCreated(eventId, title, deadline, outcomes.length);
+    }
 
-        emit EventCreated(eventId, title, deadline, outcomeIds);
+    /**
+     * @notice 请求预言机结果 (Vendor direct call)
+     * @param eventId 事件 ID
+     * @return requestId 预言机请求 ID
+     * @dev TODO: Implement oracle submission logic
+     */
+    function requestOracleResult(
+        uint256 eventId
+    ) external onlyVendor eventMustExist(eventId) returns (bytes32 requestId) {
+        Event storage evt = events[eventId];
+        require(evt.status == EventStatus.Active, "EventPod: event not active");
+        require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
+
+        // TODO: Implement oracle submission logic
+        // Structure ready: Pod submits event data to oracle
+        // Oracle resolves externally and calls fulfillResult()
+
+        // For now, just return empty bytes32
+        requestId = bytes32(0);
+
+        // Store request mapping
+        eventOracleRequests[eventId] = requestId;
     }
 
     /**
@@ -125,11 +145,7 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      * @param eventId 事件 ID
      * @param newStatus 新状态
      */
-    function updateEventStatus(uint256 eventId, EventStatus newStatus)
-        external
-        onlyEventManager
-        eventMustExist(eventId)
-    {
+    function updateEventStatus(uint256 eventId, EventStatus newStatus) external onlyVendor eventMustExist(eventId) {
         Event storage evt = events[eventId];
         EventStatus oldStatus = evt.status;
 
@@ -149,73 +165,65 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
     /**
      * @notice 接收预言机结果并结算事件 (实现 IOracleConsumer 接口)
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 预言机证明数据
      */
-    function fulfillResult(uint256 eventId, uint256 winningOutcomeId, bytes calldata proof)
-        external
-        override
-        onlyAuthorizedOracle
-        eventMustExist(eventId)
-    {
-        _settleEvent(eventId, winningOutcomeId, proof);
+    function fulfillResult(
+        uint256 eventId,
+        uint256 winningOutcomeIndex,
+        bytes calldata proof
+    ) external override onlyAuthorizedOracle eventMustExist(eventId) {
+        _settleEvent(eventId, winningOutcomeIndex, proof);
     }
 
     /**
      * @notice 结算事件 (实现 IEventPod 接口,兼容层)
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 预言机证明数据
      */
-    function settleEvent(uint256 eventId, uint256 winningOutcomeId, bytes calldata proof)
-        external
-        override
-        onlyAuthorizedOracle
-        eventMustExist(eventId)
-    {
-        _settleEvent(eventId, winningOutcomeId, proof);
+    function settleEvent(
+        uint256 eventId,
+        uint256 winningOutcomeIndex,
+        bytes calldata proof
+    ) external override onlyAuthorizedOracle eventMustExist(eventId) {
+        _settleEvent(eventId, winningOutcomeIndex, proof);
     }
 
     /**
      * @notice 内部函数: 结算事件逻辑
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 预言机证明数据 (Merkle Proof)
      */
-    function _settleEvent(uint256 eventId, uint256 winningOutcomeId, bytes calldata proof) internal {
+    function _settleEvent(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) internal {
         Event storage evt = events[eventId];
 
         require(evt.status == EventStatus.Active, "EventPod: event not active");
         require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
 
-        // 验证 winningOutcomeId 是否有效
-        bool validOutcome = false;
-        for (uint256 i = 0; i < evt.outcomeIds.length; i++) {
-            if (evt.outcomeIds[i] == winningOutcomeId) {
-                validOutcome = true;
-                break;
-            }
-        }
-        require(validOutcome, "EventPod: invalid winning outcome");
+        // 验证 winningOutcomeIndex 是否有效
+        require(winningOutcomeIndex < evt.outcomes.length, "EventPod: invalid winning outcome index");
 
         // 验证 Merkle Proof
-        _verifyMerkleProof(eventId, winningOutcomeId, proof);
+        _verifyMerkleProof(eventId, winningOutcomeIndex, proof);
 
         // 更新事件状态
         evt.status = EventStatus.Settled;
-        evt.winningOutcomeId = winningOutcomeId;
+        evt.winningOutcomeIndex = winningOutcomeIndex;
 
         // 从活跃列表移除
         _removeFromActiveList(eventId);
 
-        // 通过 OrderBookManager 获取对应的 OrderBookPod 并触发结算
-        IOrderBookPod orderBookPod = IOrderBookManager(orderBookManager).getEventPod(eventId);
-        require(address(orderBookPod) != address(0), "EventPod: orderBookPod not found");
+        // 通过 OrderBookManager 获取 vendor 的 OrderBookPod 并触发结算
+        address orderBookPodAddress = IOrderBookManager(orderBookManager).getVendorOrderBookPod(vendorId);
+        require(orderBookPodAddress != address(0), "EventPod: orderBookPod not found");
 
-        orderBookPod.settleEvent(eventId, winningOutcomeId);
+        IOrderBookPod orderBookPod = IOrderBookPod(orderBookPodAddress);
+        orderBookPod.settleEvent(eventId, winningOutcomeIndex);
 
-        emit EventSettled(eventId, winningOutcomeId, block.timestamp);
-        emit OracleResultReceived(eventId, winningOutcomeId, msg.sender);
+        emit EventSettled(eventId, winningOutcomeIndex, block.timestamp);
+        emit OracleResultReceived(eventId, winningOutcomeIndex, msg.sender);
     }
 
     /**
@@ -223,7 +231,7 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      * @param eventId 事件 ID
      * @param reason 取消原因
      */
-    function cancelEvent(uint256 eventId, string calldata reason) external onlyEventManager eventMustExist(eventId) {
+    function cancelEvent(uint256 eventId, string calldata reason) external onlyVendor eventMustExist(eventId) {
         Event storage evt = events[eventId];
 
         require(
@@ -298,11 +306,11 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
     /**
      * @notice 验证 Merkle Proof
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof Merkle Proof 证明数据
      * @dev proof 格式: abi.encode(bytes32[] merkleProof, bytes32 root)
      */
-    function _verifyMerkleProof(uint256 eventId, uint256 winningOutcomeId, bytes calldata proof) internal view {
+    function _verifyMerkleProof(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) internal view {
         // 如果 proof 为空,跳过验证 (向后兼容,但不推荐)
         if (proof.length == 0) {
             return;
@@ -311,8 +319,8 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
         // 解析 Merkle Proof
         (bytes32[] memory merkleProof, bytes32 expectedRoot) = abi.decode(proof, (bytes32[], bytes32));
 
-        // 构造叶子节点: hash(eventId, winningOutcomeId, chainId)
-        bytes32 leaf = keccak256(abi.encodePacked(eventId, winningOutcomeId, block.chainid));
+        // 构造叶子节点: hash(eventId, winningOutcomeIndex, chainId)
+        bytes32 leaf = keccak256(abi.encodePacked(eventId, winningOutcomeIndex, block.chainid));
 
         // 验证 Merkle Proof
         bool isValid = _verifyProof(merkleProof, expectedRoot, leaf);
@@ -371,18 +379,16 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
     /**
      * @notice 获取事件结果选项
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引 (0-based)
      * @return outcome 结果选项信息
      */
-    function getOutcome(uint256 eventId, uint256 outcomeId)
-        external
-        view
-        eventMustExist(eventId)
-        returns (Outcome memory)
-    {
-        Outcome memory outcome = outcomes[eventId][outcomeId];
-        require(outcome.outcomeId != 0, "EventPod: outcome does not exist");
-        return outcome;
+    function getOutcome(
+        uint256 eventId,
+        uint256 outcomeIndex
+    ) external view eventMustExist(eventId) returns (Outcome memory) {
+        Event storage evt = events[eventId];
+        require(outcomeIndex < evt.outcomes.length, "EventPod: outcome index out of bounds");
+        return evt.outcomes[outcomeIndex];
     }
 
     /**

@@ -6,7 +6,7 @@ import "../../interfaces/event/IFundingPod.sol";
 /**
  * @title FundingPodStorage
  * @notice FundingPod 的存储层合约
- * @dev 存储与逻辑分离,便于合约升级
+ * @dev 存储与逻辑分离
  */
 abstract contract FundingPodStorage is IFundingPod {
     // ============ 常量 Constants ============
@@ -65,8 +65,4 @@ abstract contract FundingPodStorage is IFundingPod {
 
     /// @notice 总提现量: token => totalWithdrawn
     mapping(address => uint256) public totalWithdrawn;
-
-    /// @notice 预留升级空间(OpenZeppelin 升级模式)
-    /// @dev 减去已使用的 slot 数量: 约 14 个映射/变量
-    uint256[86] private _gap;
 }
