@@ -179,6 +179,46 @@ contract FundingManager is
         fundingPod.withdraw(tokenAddress, payable(msg.sender), amount);
     }
 
+    // ============ 虚拟 Long Token 管理 Virtual Long Token Management ============
+
+    /**
+     * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long Token)
+     * @param fundingPod Pod 地址
+     * @param eventId 事件 ID
+     * @param tokenAddress Token 地址
+     * @param amount 铸造数量
+     */
+    function mintCompleteSet(
+        IFundingPod fundingPod,
+        uint256 eventId,
+        address tokenAddress,
+        uint256 amount
+    ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
+        require(amount > 0, "FundingManager: mint amount must be greater than 0");
+
+        // 调用 Pod 的 mintCompleteSet 函数
+        fundingPod.mintCompleteSet(msg.sender, eventId, tokenAddress, amount);
+    }
+
+    /**
+     * @notice 销毁完整集合 (用户销毁所有结果各 amount 份 Long Token,获得 amount USDT)
+     * @param fundingPod Pod 地址
+     * @param eventId 事件 ID
+     * @param tokenAddress Token 地址
+     * @param amount 销毁数量
+     */
+    function burnCompleteSet(
+        IFundingPod fundingPod,
+        uint256 eventId,
+        address tokenAddress,
+        uint256 amount
+    ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
+        require(amount > 0, "FundingManager: burn amount must be greater than 0");
+
+        // 调用 Pod 的 burnCompleteSet 函数
+        fundingPod.burnCompleteSet(msg.sender, eventId, tokenAddress, amount);
+    }
+
     // ============ 查询功能 View Functions ============
 
     /**
@@ -187,9 +227,69 @@ contract FundingManager is
      * @param tokenAddress Token 地址
      * @return balance 总余额
      */
-    function getVendorPodBalance(uint256 vendorId, address tokenAddress) external view returns (uint256) {
-        address fundingPodAddress = vendorToFundingPod[vendorId];
-        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
+    function getPodBalance(
+        IFundingPod fundingPod,
+        address tokenAddress
+    ) external view returns (uint256) {
+        return fundingPod.tokenBalances(tokenAddress);
+    }
+
+    /**
+     * @notice 获取用户可用余额
+     * @param fundingPod Pod 地址
+     * @param user 用户地址
+     * @param tokenAddress Token 地址
+     * @return balance 可用余额
+     */
+    function getUserBalance(
+        IFundingPod fundingPod,
+        address user,
+        address tokenAddress
+    ) external view returns (uint256) {
+        return fundingPod.getUserBalance(user, tokenAddress);
+    }
+
+    /**
+     * @notice 获取用户 Long Token 持仓
+     * @param fundingPod Pod 地址
+     * @param user 用户地址
+     * @param tokenAddress Token 地址
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @return position Long Token 数量
+     */
+    function getLongPosition(
+        IFundingPod fundingPod,
+        address user,
+        address tokenAddress,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external view returns (uint256) {
+        return fundingPod.getLongPosition(user, tokenAddress, eventId, outcomeId);
+    }
+
+    /**
+     * @notice 获取事件奖金池
+     * @param fundingPod Pod 地址
+     * @param eventId 事件 ID
+     * @param tokenAddress Token 地址
+     * @return pool 奖金池金额
+     */
+    function getEventPrizePool(
+        IFundingPod fundingPod,
+        uint256 eventId,
+        address tokenAddress
+    ) external view returns (uint256) {
+        return fundingPod.getEventPrizePool(eventId, tokenAddress);
+    }
+
+    /**
+     * @notice 获取白名单 Pod 数量
+     * @return count Pod 数量
+     */
+    function getWhitelistedPodCount() external view returns (uint256) {
+        return whitelistedPods.length;
+    }
 
         IFundingPod fundingPod = IFundingPod(fundingPodAddress);
         return fundingPod.tokenBalances(tokenAddress);

@@ -73,28 +73,45 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
         if (amount == 0) revert InvalidAmount(amount);
 
-        // ✅ 计算手续费
+        // 计算手续费
         uint256 fee = 0;
         if (feeVaultPod != address(0)) {
             fee = IFeeVaultPod(feeVaultPod).calculateFee(amount, "trade");
         }
 
-        // ✅ 集成 FundingPod: 锁定下单所需资金 (包含手续费)
+        // 集成 FundingPod: 锁定下单所需资金或 Long Token
+        // 买单锁定 USDT (包含手续费): (amount + fee) * price / MAX_PRICE
+        // 卖单锁定 Long Token (包含手续费): amount + fee
         uint256 requiredAmount = side == OrderSide.Buy
-            ? ((amount + fee) * price) / MAX_PRICE // 买单锁定: (amount + fee) * price
-            : (amount + fee); // 卖单锁定: amount + fee
+            ? ((amount + fee) * price) / MAX_PRICE
+            : (amount + fee);
 
-        IFundingPod(fundingPod).lockOnOrderPlaced(user, tokenAddress, requiredAmount, eventId, outcomeId);
+        IFundingPod(fundingPod).lockForOrder(
+            user,              // 用户地址
+            nextOrderId,       // 订单 ID
+            tokenAddress,      // Token 地址
+            side == OrderSide.Buy,  // 是否为买单
+            requiredAmount,    // 锁定数量
+            eventId,           // 事件 ID
+            outcomeId          // 结果 ID
+        );
 
-        // ✅ 收取手续费
+        // 收取手续费
         if (fee > 0 && feeVaultPod != address(0)) {
-            IFeeVaultPod(feeVaultPod).collectFee(tokenAddress, user, fee, eventId, "trade");
+            IFeeVaultPod(feeVaultPod)
+                .collectFee(
+                    tokenAddress,
+                    user, // 使用传入的真实用户地址
+                    fee,
+                    eventId,
+                    "trade"
+                );
         }
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
             orderId: orderId,
-            user: user,
+            user: user, // 使用传入的真实用户地址
             eventId: eventId,
             outcomeId: outcomeId,
             side: side,
@@ -114,33 +131,39 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             _addToOrderBook(orderId);
         }
 
-        emit OrderPlaced(orderId, user, eventId, outcomeId, side, price, amount);
+        emit OrderPlaced(
+            orderId,
+            user, // 使用传入的真实用户地址
+            eventId,
+            outcomeId,
+            side,
+            price,
+            amount
+        );
     }
 
 
     function cancelOrder(uint256 orderId) external {
         Order storage order = orders[orderId];
 
-        require(msg.sender == order.user, "OrderBookPod: only order owner");
         if (order.status != OrderStatus.Pending && order.status != OrderStatus.Partial) {
             revert CannotCancelOrder(orderId);
         }
-        if (eventSettled[order.eventId]) revert EventAlreadySettled(order.eventId);
+        if (eventSettled[order.eventId]) {
+            revert EventAlreadySettled(order.eventId);
+        }
 
         _removeFromOrderBook(orderId);
 
         order.status = OrderStatus.Cancelled;
 
         if (order.remainingAmount > 0) {
-            // ✅ 集成 FundingPod: 解锁剩余未成交资金
-            uint256 unlockedAmount = order.side == OrderSide.Buy
-                ? (order.remainingAmount * order.price) / MAX_PRICE
-                : order.remainingAmount;
-
-            IFundingPod(fundingPod).unlockOnOrderCancelled(
+            // 集成 FundingPod: 解锁剩余未成交资金或 Long Token
+            IFundingPod(fundingPod).unlockForOrder(
                 order.user,
+                orderId,
                 order.tokenAddress,
-                unlockedAmount,
+                order.side == OrderSide.Buy,  // 是否为买单
                 order.eventId,
                 order.outcomeId
             );
@@ -149,10 +172,12 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
     }
 
-    function settleEvent(uint256 eventId, uint256 winningOutcomeIndex) external onlyEventPod {
+    function settleEvent(uint256 eventId, uint256 winningOutcomeId) external onlyEventPod {
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
-        if (!supportedOutcomes[eventId][winningOutcomeIndex]) revert OutcomeNotSupported(eventId, winningOutcomeIndex);
+        if (!supportedOutcomes[eventId][winningOutcomeId]) {
+            revert OutcomeNotSupported(eventId, winningOutcomeId);
+        }
 
         eventSettled[eventId] = true;
         eventResults[eventId] = winningOutcomeIndex;
@@ -163,7 +188,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         emit EventSettled(eventId, winningOutcomeIndex);
     }
 
-    function addEvent(uint256 eventId, uint256 outcomeCount) external onlyEventPod {
+    function addEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookManager {
         require(!supportedEvents[eventId], "OrderBookPod: event exists");
         supportedEvents[eventId] = true;
 
@@ -173,7 +198,10 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             eventOrderBook.supportedOutcomes.push(i);
         }
 
-        emit EventAdded(eventId, outcomeCount);
+        // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)
+        IFundingPod(fundingPod).registerEvent(eventId, outcomeIds);
+
+        emit EventAdded(eventId, outcomeIds);
     }
 
     function getBestBid(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount) {
@@ -223,9 +251,12 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 uint256 sellOrderId = sellOrders[j];
                 Order storage sellOrder = orders[sellOrderId];
                 if (sellOrder.status == OrderStatus.Cancelled || sellOrder.remainingAmount == 0) continue;
-                if (buyOrder.eventId != sellOrder.eventId) revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
-                if (buyOrder.outcomeId != sellOrder.outcomeId)
+                if (buyOrder.eventId != sellOrder.eventId) {
+                    revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
+                }
+                if (buyOrder.outcomeId != sellOrder.outcomeId) {
                     revert OutcomeMismatch(buyOrder.outcomeId, sellOrder.outcomeId);
+                }
                 _executeMatch(buyOrderId, sellOrderId);
             }
         }
@@ -243,9 +274,12 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 uint256 buyOrderId = buyOrders[j];
                 Order storage buyOrder = orders[buyOrderId];
                 if (buyOrder.status == OrderStatus.Cancelled || buyOrder.remainingAmount == 0) continue;
-                if (buyOrder.eventId != sellOrder.eventId) revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
-                if (buyOrder.outcomeId != sellOrder.outcomeId)
+                if (buyOrder.eventId != sellOrder.eventId) {
+                    revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
+                }
+                if (buyOrder.outcomeId != sellOrder.outcomeId) {
                     revert OutcomeMismatch(buyOrder.outcomeId, sellOrder.outcomeId);
+                }
                 _executeMatch(buyOrderId, sellOrderId);
             }
         }
@@ -255,9 +289,8 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         Order storage buyOrder = orders[buyOrderId];
         Order storage sellOrder = orders[sellOrderId];
 
-        uint256 matchAmount = buyOrder.remainingAmount < sellOrder.remainingAmount
-            ? buyOrder.remainingAmount
-            : sellOrder.remainingAmount;
+        uint256 matchAmount =
+            buyOrder.remainingAmount < sellOrder.remainingAmount ? buyOrder.remainingAmount : sellOrder.remainingAmount;
 
         uint256 matchPrice = sellOrder.price;
 
@@ -283,16 +316,17 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] = 0;
         }
 
-        // ✅ 集成 FundingPod: 资金结算
+        // 集成 FundingPod: 资金结算 (虚拟 Long Token 模型)
         IFundingPod(fundingPod).settleMatchedOrder(
-            buyOrder.user,
-            sellOrder.user,
-            buyOrder.tokenAddress,
-            matchAmount,
-            matchPrice,
-            buyOrder.eventId,
-            buyOrder.outcomeId,
-            sellOrder.outcomeId
+            buyOrderId,              // 买单 ID
+            sellOrderId,             // 卖单 ID
+            buyOrder.user,           // 买家地址
+            sellOrder.user,          // 卖家地址
+            buyOrder.tokenAddress,   // Token 地址
+            matchAmount,             // 成交数量
+            matchPrice,              // 成交价格
+            buyOrder.eventId,        // 事件 ID
+            buyOrder.outcomeId       // 结果 ID (买卖同一 outcome)
         );
 
         // ✅ 收取撮合手续费
@@ -302,23 +336,13 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             uint256 sellerFee = matchFee - buyerFee;
 
             if (buyerFee > 0) {
-                IFeeVaultPod(feeVaultPod).collectFee(
-                    buyOrder.tokenAddress,
-                    buyOrder.user,
-                    buyerFee,
-                    buyOrder.eventId,
-                    "trade"
-                );
+                IFeeVaultPod(feeVaultPod)
+                    .collectFee(buyOrder.tokenAddress, buyOrder.user, buyerFee, buyOrder.eventId, "trade");
             }
 
             if (sellerFee > 0) {
-                IFeeVaultPod(feeVaultPod).collectFee(
-                    sellOrder.tokenAddress,
-                    sellOrder.user,
-                    sellerFee,
-                    sellOrder.eventId,
-                    "trade"
-                );
+                IFeeVaultPod(feeVaultPod)
+                    .collectFee(sellOrder.tokenAddress, sellOrder.user, sellerFee, sellOrder.eventId, "trade");
             }
         }
 
@@ -473,16 +497,13 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                     order.status = OrderStatus.Cancelled;
 
-                    // ✅ 集成 FundingPod: 批量撤单解锁资金
+                    // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        uint256 unlockedAmount = order.side == OrderSide.Buy
-                            ? (order.remainingAmount * order.price) / MAX_PRICE
-                            : order.remainingAmount;
-
-                        IFundingPod(fundingPod).unlockOnOrderCancelled(
+                        IFundingPod(fundingPod).unlockForOrder(
                             order.user,
+                            ids[j],              // orderId
                             order.tokenAddress,
-                            unlockedAmount,
+                            order.side == OrderSide.Buy,  // 是否为买单
                             order.eventId,
                             order.outcomeId
                         );
@@ -499,16 +520,13 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                     order.status = OrderStatus.Cancelled;
 
-                    // ✅ 集成 FundingPod: 批量撤单解锁资金
+                    // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        uint256 unlockedAmount = order.side == OrderSide.Buy
-                            ? (order.remainingAmount * order.price) / MAX_PRICE
-                            : order.remainingAmount;
-
-                        IFundingPod(fundingPod).unlockOnOrderCancelled(
+                        IFundingPod(fundingPod).unlockForOrder(
                             order.user,
+                            ids[j],              // orderId
                             order.tokenAddress,
-                            unlockedAmount,
+                            order.side == OrderSide.Buy,  // 是否为买单
                             order.eventId,
                             order.outcomeId
                         );

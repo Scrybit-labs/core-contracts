@@ -50,12 +50,10 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
      * @param _orderBookPod OrderBookPod 合约地址
      * @param _eventPod EventPod 合约地址
      */
-    function initialize(
-        address initialOwner,
-        address _fundingManager,
-        address _orderBookPod,
-        address _eventPod
-    ) external initializer {
+    function initialize(address initialOwner, address _fundingManager, address _orderBookPod, address _eventPod)
+        external
+        initializer
+    {
         __Ownable_init(initialOwner);
         __Pausable_init();
         require(_fundingManager != address(0), "FundingPod: invalid fundingManager");
@@ -103,13 +101,11 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
-    function withdraw(
-        address tokenAddress,
-        address payable withdrawAddress,
-        uint256 amount
-    ) external whenNotPaused nonReentrant {
-        address user = msg.sender; // Direct caller
-
+    function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount)
+        external
+        onlyFundingManager
+        nonReentrant
+    {
         if (!IsSupportToken[tokenAddress]) {
             revert TokenIsNotSupported(tokenAddress);
         }
@@ -130,7 +126,7 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
 
         // 转账
         if (tokenAddress == ETHAddress) {
-            (bool sent, ) = withdrawAddress.call{value: amount}("");
+            (bool sent,) = withdrawAddress.call{value: amount}("");
             require(sent, "FundingPod: failed to send ETH");
         } else {
             IERC20(tokenAddress).safeTransfer(withdrawAddress, amount);
@@ -167,132 +163,227 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
 
     // ============ 核心资金管理 Core Funding Functions ============
 
+    // ============ 虚拟 Long Token 管理 Virtual Long Token Management ============
+
     /**
-     * @notice 下单时锁定资金
-     * @param user 用户地址
-     * @param token Token 地址
-     * @param amount 锁定金额
+     * @notice 注册事件的结果选项
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIds 结果 ID 列表
      */
-    function lockOnOrderPlaced(
-        address user,
-        address token,
-        uint256 amount,
-        uint256 eventId,
-        uint256 outcomeId
-    ) external onlyOrderBookPod {
-        if (amount == 0) {
-            revert LessThanZero(amount);
+    function registerEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookPod {
+        require(eventOutcomes[eventId].length == 0, "FundingPod: event already registered");
+        require(outcomeIds.length > 0, "FundingPod: empty outcomes");
+
+        for (uint256 i = 0; i < outcomeIds.length; i++) {
+            eventOutcomes[eventId].push(outcomeIds[i]);
         }
+    }
+
+    /**
+     * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long)
+     * @param user 用户地址
+     * @param eventId 事件 ID
+     * @param token Token 地址
+     * @param amount 铸造数量
+     */
+    function mintCompleteSet(address user, uint256 eventId, address token, uint256 amount)
+        external
+        onlyFundingManager
+    {
+        require(amount > 0, "FundingPod: amount must be greater than zero");
+        require(eventOutcomes[eventId].length > 0, "FundingPod: event not registered");
 
         uint256 availableBalance = userTokenBalances[user][token];
         if (availableBalance < amount) {
             revert InsufficientBalance(user, token, amount, availableBalance);
         }
 
-        // 从可用余额转移到锁定余额
+        // 扣除 USDT
         userTokenBalances[user][token] -= amount;
-        lockedBalances[user][token][eventId][outcomeId] += amount;
-        userEventTotalLocked[user][token][eventId] += amount;
 
-        // 增加事件奖金池
+        // 为每个 outcome 铸造 Long token
+        uint256[] storage outcomes = eventOutcomes[eventId];
+        for (uint256 i = 0; i < outcomes.length; i++) {
+            longPositions[user][token][eventId][outcomes[i]] += amount;
+        }
+
+        // 增加奖金池 (铸造时锁定的 USDT 进入奖金池)
         eventPrizePool[eventId][token] += amount;
 
-        emit FundsLocked(user, token, amount, eventId, outcomeId);
+        emit CompleteSetMinted(user, eventId, token, amount);
     }
 
     /**
-     * @notice 撤单时解锁资金
+     * @notice 销毁完整集合 (用户销毁所有结果各 amount 份 Long,获得 amount USDT)
      * @param user 用户地址
+     * @param eventId 事件 ID
      * @param token Token 地址
-     * @param amount 解锁金额
+     * @param amount 销毁数量
+     */
+    function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount)
+        external
+        onlyFundingManager
+    {
+        require(amount > 0, "FundingPod: amount must be greater than zero");
+        require(eventOutcomes[eventId].length > 0, "FundingPod: event not registered");
+
+        // 检查并销毁每个 outcome 的 Long token
+        uint256[] storage outcomes = eventOutcomes[eventId];
+        for (uint256 i = 0; i < outcomes.length; i++) {
+            uint256 position = longPositions[user][token][eventId][outcomes[i]];
+            if (position < amount) {
+                revert InsufficientLongPosition(user, token, eventId, outcomes[i]);
+            }
+            longPositions[user][token][eventId][outcomes[i]] -= amount;
+        }
+
+        // 返还 USDT
+        userTokenBalances[user][token] += amount;
+
+        // 减少奖金池 (销毁时 USDT 从奖金池返还给用户)
+        eventPrizePool[eventId][token] -= amount;
+
+        emit CompleteSetBurned(user, eventId, token, amount);
+    }
+
+    // ============ 订单资金管理 Order Funding Management ============
+
+    /**
+     * @notice 下单时锁定资金或 Long Token
+     * @param user 用户地址
+     * @param orderId 订单 ID
+     * @param token Token 地址
+     * @param isBuyOrder 是否为买单
+     * @param amount 锁定数量 (买单锁 USDT,卖单锁 Long)
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
      */
-    function unlockOnOrderCancelled(
+    function lockForOrder(
         address user,
+        uint256 orderId,
         address token,
+        bool isBuyOrder,
         uint256 amount,
         uint256 eventId,
         uint256 outcomeId
     ) external onlyOrderBookPod {
-        if (amount == 0) {
-            revert LessThanZero(amount);
+        require(amount > 0, "FundingPod: amount must be greater than zero");
+
+        if (isBuyOrder) {
+            // 买单: 锁定 USDT
+            uint256 availableBalance = userTokenBalances[user][token];
+            if (availableBalance < amount) {
+                revert InsufficientBalance(user, token, amount, availableBalance);
+            }
+
+            userTokenBalances[user][token] -= amount;
+            orderLockedUSDT[orderId] = amount;
+
+            emit FundsLocked(user, token, amount, eventId, outcomeId);
+        } else {
+            // 卖单: 锁定 Long Token
+            uint256 position = longPositions[user][token][eventId][outcomeId];
+            if (position < amount) {
+                revert InsufficientLongPosition(user, token, eventId, outcomeId);
+            }
+
+            longPositions[user][token][eventId][outcomeId] -= amount;
+            orderLockedLong[orderId][eventId][outcomeId] = amount;
+
+            emit FundsLocked(user, token, amount, eventId, outcomeId);
         }
-
-        uint256 locked = lockedBalances[user][token][eventId][outcomeId];
-        if (locked < amount) {
-            revert InsufficientLockedBalance(user, token, eventId, outcomeId);
-        }
-
-        // 从锁定余额转回可用余额
-        lockedBalances[user][token][eventId][outcomeId] -= amount;
-        userEventTotalLocked[user][token][eventId] -= amount;
-        userTokenBalances[user][token] += amount;
-
-        // 减少事件奖金池
-        eventPrizePool[eventId][token] -= amount;
-
-        emit FundsUnlocked(user, token, amount, eventId, outcomeId);
     }
 
     /**
-     * @notice 撮合成交时结算资金
+     * @notice 撤单时解锁资金或 Long Token
+     * @param user 用户地址
+     * @param orderId 订单 ID
+     * @param token Token 地址
+     * @param isBuyOrder 是否为买单
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     */
+    function unlockForOrder(
+        address user,
+        uint256 orderId,
+        address token,
+        bool isBuyOrder,
+        uint256 eventId,
+        uint256 outcomeId
+    ) external onlyOrderBookPod {
+        if (isBuyOrder) {
+            // 买单: 解锁 USDT
+            uint256 lockedAmount = orderLockedUSDT[orderId];
+            require(lockedAmount > 0, "FundingPod: no locked USDT");
+
+            userTokenBalances[user][token] += lockedAmount;
+            orderLockedUSDT[orderId] = 0;
+
+            emit FundsUnlocked(user, token, lockedAmount, eventId, outcomeId);
+        } else {
+            // 卖单: 解锁 Long Token
+            uint256 lockedAmount = orderLockedLong[orderId][eventId][outcomeId];
+            require(lockedAmount > 0, "FundingPod: no locked Long");
+
+            longPositions[user][token][eventId][outcomeId] += lockedAmount;
+            orderLockedLong[orderId][eventId][outcomeId] = 0;
+
+            emit FundsUnlocked(user, token, lockedAmount, eventId, outcomeId);
+        }
+    }
+
+    /**
+     * @notice 撮合成交时结算资金 (买家用 USDT 换 Long,卖家用 Long 换 USDT)
+     * @param buyOrderId 买单 ID
+     * @param sellOrderId 卖单 ID
      * @param buyer 买家地址
      * @param seller 卖家地址
      * @param token Token 地址
-     * @param amount 成交数量
-     * @param price 成交价格 (basis points, 1-10000)
+     * @param matchAmount 成交数量
+     * @param matchPrice 成交价格 (basis points, 1-10000)
      * @param eventId 事件 ID
-     * @param buyOutcomeId 买家购买的结果 ID
-     * @param sellOutcomeId 卖家出售的结果 ID (通常与买家相同)
+     * @param outcomeId 结果 ID
      */
     function settleMatchedOrder(
+        uint256 buyOrderId,
+        uint256 sellOrderId,
         address buyer,
         address seller,
         address token,
-        uint256 amount,
-        uint256 price,
+        uint256 matchAmount,
+        uint256 matchPrice,
         uint256 eventId,
-        uint256 buyOutcomeId,
-        uint256 sellOutcomeId
+        uint256 outcomeId
     ) external onlyOrderBookPod {
-        // 买家支付的金额 = amount * price / PRICE_PRECISION
-        uint256 buyerPayment = (amount * price) / PRICE_PRECISION;
+        // 计算买家支付金额
+        uint256 payment = (matchAmount * matchPrice) / PRICE_PRECISION;
 
-        // 卖家支付的金额 = amount * (PRICE_PRECISION - price) / PRICE_PRECISION
-        uint256 sellerPayment = (amount * (PRICE_PRECISION - price)) / PRICE_PRECISION;
+        // 买家: 消耗锁定的 USDT,获得 Long Token
+        require(orderLockedUSDT[buyOrderId] >= payment, "FundingPod: insufficient locked USDT");
+        orderLockedUSDT[buyOrderId] -= payment;
+        longPositions[buyer][token][eventId][outcomeId] += matchAmount;
 
-        // 买家锁定资金减少(已支付)
-        uint256 buyerLocked = lockedBalances[buyer][token][eventId][buyOutcomeId];
-        require(buyerLocked >= buyerPayment, "FundingPod: insufficient buyer locked balance");
-        lockedBalances[buyer][token][eventId][buyOutcomeId] -= buyerPayment;
+        // 卖家: 消耗锁定的 Long Token,获得 USDT
+        require(orderLockedLong[sellOrderId][eventId][outcomeId] >= matchAmount, "FundingPod: insufficient locked Long");
+        orderLockedLong[sellOrderId][eventId][outcomeId] -= matchAmount;
+        userTokenBalances[seller][token] += payment;
 
-        // 卖家锁定资金增加(接收买家支付,但仍锁定在事件中)
-        // 注意: 卖家实际上是在"做空"某个结果,所以他的资金被锁定在相反的结果上
-        // 为了简化,我们假设卖家的资金锁定在同一个 outcome 上
-        lockedBalances[seller][token][eventId][sellOutcomeId] += sellerPayment;
+        // 注意: 撮合交易不改变奖金池
+        // 奖金池只在 mintCompleteSet (增加) 和 burnCompleteSet (减少) 时变化
+        // 因为奖金池 = 所有流通的完整集合价值总和
 
-        // 更新卖家的事件总锁定额
-        userEventTotalLocked[seller][token][eventId] += sellerPayment;
-
-        // 卖家支付的金额加入奖金池
-        // 买家的支付在下单时已经加入奖金池,这里只需加入卖家的部分
-        eventPrizePool[eventId][token] += sellerPayment;
-
-        // 持仓变化在 OrderBookPod 中处理,这里只处理资金
-
-        emit OrderSettled(0, 0, amount, token); // orderIds 由 OrderBookPod 提供
+        emit OrderSettled(buyOrderId, sellOrderId, matchAmount, token);
     }
 
+    // ============ 事件结算 Event Settlement ============
+
     /**
-     * @notice 事件结算时分配奖金
+     * @notice 事件结算时分配奖金 (虚拟 Long Token 模型)
      * @param eventId 事件 ID
      * @param winningOutcomeId 获胜结果 ID
      * @param token Token 地址
      * @param winners 获胜者地址列表
-     * @param positions 获胜者持仓列表
+     * @param positions 获胜者 Long Token 持仓列表
      */
     function settleEvent(
         uint256 eventId,
@@ -312,42 +403,31 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
         uint256 prizePool = eventPrizePool[eventId][token];
         require(prizePool > 0, "FundingPod: no prize pool");
 
-        // 计算总获胜持仓
-        uint256 totalWinningPositions = 0;
+        // 计算总获胜 Long Token 持仓
+        uint256 totalWinningLongPositions = 0;
         for (uint256 i = 0; i < positions.length; i++) {
-            totalWinningPositions += positions[i];
+            totalWinningLongPositions += positions[i];
         }
 
-        require(totalWinningPositions > 0, "FundingPod: no winning positions");
+        require(totalWinningLongPositions > 0, "FundingPod: no winning positions");
 
         // 按比例分配奖金给获胜者
+        // 在虚拟 Long Token 模型中: 1 Long Token = 1 份奖金池份额
+        // 奖金池 = 所有撮合成交的完整集合价值总和
+        // 每个获胜者获得: (prizePool * 持有的Long) / 总获胜Long
         for (uint256 i = 0; i < winners.length; i++) {
             address winner = winners[i];
-            uint256 position = positions[i];
+            uint256 longPosition = positions[i];
 
-            if (position == 0) continue;
+            if (longPosition == 0) continue;
 
-            // 计算该获胜者应得的奖金 (按持仓比例瓜分整个奖金池)
-            // 在预测市场中: reward = position * 每份价值(1 单位token)
-            // 奖金池分配比例: reward = (prizePool * position) / totalWinningPositions
-            uint256 reward = (prizePool * position) / totalWinningPositions;
+            // 计算该获胜者应得的奖金
+            uint256 reward = (prizePool * longPosition) / totalWinningLongPositions;
 
-            // 清零获胜者在获胜结果上的锁定资金
-            // 注意: locked 读取后不直接使用,因为 reward 已经按持仓比例计算
-            // 但我们需要清零以防止重复提取
-            uint256 lockedInWinningOutcome = lockedBalances[winner][token][eventId][winningOutcomeId];
-            lockedBalances[winner][token][eventId][winningOutcomeId] = 0;
-
-            // 减少用户在该事件的总锁定额 (只减去获胜结果的锁定)
-            if (userEventTotalLocked[winner][token][eventId] >= lockedInWinningOutcome) {
-                userEventTotalLocked[winner][token][eventId] -= lockedInWinningOutcome;
-            } else {
-                // 防御性编程: 如果出现异常,直接清零
-                userEventTotalLocked[winner][token][eventId] = 0;
-            }
+            // 销毁获胜者的 Long Token (已兑换为 USDT)
+            longPositions[winner][token][eventId][winningOutcomeId] = 0;
 
             // 将奖金转入可用余额
-            // reward 已经包含了获胜者应得的全部金额 (本金 + 分得的输家资金)
             userTokenBalances[winner][token] += reward;
         }
 
@@ -370,20 +450,43 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
     }
 
     /**
-     * @notice 获取用户在某事件某结果的锁定余额
+     * @notice 获取用户 Long Token 持仓
      * @param user 用户地址
      * @param token Token 地址
      * @param eventId 事件 ID
      * @param outcomeId 结果 ID
-     * @return locked 锁定金额
+     * @return position Long Token 数量
      */
-    function getLockedBalance(
-        address user,
-        address token,
-        uint256 eventId,
-        uint256 outcomeId
-    ) external view returns (uint256) {
-        return lockedBalances[user][token][eventId][outcomeId];
+    function getLongPosition(address user, address token, uint256 eventId, uint256 outcomeId)
+        external
+        view
+        returns (uint256)
+    {
+        return longPositions[user][token][eventId][outcomeId];
+    }
+
+    /**
+     * @notice 获取订单锁定的 USDT
+     * @param orderId 订单 ID
+     * @return locked 锁定的 USDT 数量
+     */
+    function getOrderLockedUSDT(uint256 orderId) external view returns (uint256) {
+        return orderLockedUSDT[orderId];
+    }
+
+    /**
+     * @notice 获取订单锁定的 Long Token
+     * @param orderId 订单 ID
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @return locked 锁定的 Long Token 数量
+     */
+    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint256 outcomeId)
+        external
+        view
+        returns (uint256)
+    {
+        return orderLockedLong[orderId][eventId][outcomeId];
     }
 
     /**

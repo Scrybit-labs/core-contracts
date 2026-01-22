@@ -39,13 +39,19 @@ abstract contract FundingPodStorage is IFundingPod {
     /// @notice 用户可用余额: user => token => balance
     mapping(address => mapping(address => uint256)) public userTokenBalances;
 
-    /// @notice 用户锁定余额: user => token => eventId => outcomeId => lockedAmount
-    /// @dev 四层嵌套映射,精确跟踪每个订单的锁定资金
-    mapping(address => mapping(address => mapping(uint256 => mapping(uint256 => uint256)))) public lockedBalances;
+    // ============ 虚拟 Long Token 持仓 Virtual Long Token Positions ============
 
-    /// @notice 用户在事件中的总锁定额: user => token => eventId => totalLocked
-    /// @dev 用于优化查询,避免遍历所有 outcomeId
-    mapping(address => mapping(address => mapping(uint256 => uint256))) public userEventTotalLocked;
+    /// @notice 用户虚拟 Long Token 持仓: user => token => eventId => outcomeId => longBalance
+    /// @dev 代表用户持有的某个结果的 Long token 数量
+    mapping(address => mapping(address => mapping(uint256 => mapping(uint256 => uint256)))) public longPositions;
+
+    /// @notice 订单锁定的 USDT: orderId => lockedUSDT
+    /// @dev 买单锁定 USDT,撮合时释放
+    mapping(uint256 => uint256) public orderLockedUSDT;
+
+    /// @notice 订单锁定的 Long Token: orderId => eventId => outcomeId => lockedLong
+    /// @dev 卖单锁定 Long token,撮合时释放
+    mapping(uint256 => mapping(uint256 => mapping(uint256 => uint256))) public orderLockedLong;
 
     // ============ 事件奖金池管理 Event Prize Pool ============
 
@@ -65,4 +71,14 @@ abstract contract FundingPodStorage is IFundingPod {
 
     /// @notice 总提现量: token => totalWithdrawn
     mapping(address => uint256) public totalWithdrawn;
+
+    // ============ 事件结果信息 Event Outcome Info ============
+
+    /// @notice 事件的所有结果 ID: eventId => outcomeIds[]
+    /// @dev 用于铸造完整集合时遍历所有结果
+    mapping(uint256 => uint256[]) public eventOutcomes;
+
+    /// @notice 预留升级空间(OpenZeppelin 升级模式)
+    /// @dev 减去已使用的 slot 数量: 约 17 个映射/变量
+    uint256[83] private _gap;
 }

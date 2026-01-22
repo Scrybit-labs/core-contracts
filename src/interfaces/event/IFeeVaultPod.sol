@@ -21,6 +21,26 @@ interface IFeeVaultPod {
     /// @notice 手续费接收者更新事件
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
 
+    /// @notice 手续费转账到 AdminFeeVault 事件
+    event FeeTransferredToAdmin(
+        address indexed token,
+        uint256 amount,
+        string category
+    );
+
+    /// @notice AdminFeeVault 地址更新事件
+    event AdminFeeVaultUpdated(
+        address indexed oldVault,
+        address indexed newVault
+    );
+
+    /// @notice 转账阈值更新事件
+    event TransferThresholdUpdated(
+        address indexed token,
+        uint256 oldThreshold,
+        uint256 newThreshold
+    );
+
     // ============ 错误 Errors ============
 
     error InvalidFeeRate(uint256 rate);
@@ -66,6 +86,19 @@ interface IFeeVaultPod {
      * @param recipient 接收者地址
      */
     function setFeeRecipient(address recipient) external;
+
+    /**
+     * @notice 设置 AdminFeeVault 地址
+     * @param vault AdminFeeVault 合约地址
+     */
+    function setAdminFeeVault(address vault) external;
+
+    /**
+     * @notice 设置自动转账阈值
+     * @param token Token 地址
+     * @param threshold 阈值金额
+     */
+    function setTransferThreshold(address token, uint256 threshold) external;
 
     // ============ 查询功能 View Functions ============
 
