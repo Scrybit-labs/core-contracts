@@ -1357,6 +1357,302 @@ FundingPod (执行层)
 
 ---
 
+## ✅ 完整修复报告 - FeeVaultPod 与 AdminFeeVault 集成
+
+---
+
+### 🎯 问题描述
+
+在之前的架构中，FeeVaultPod 负责收集手续费，但缺少与 AdminFeeVault 的集成：
+
+1. FeeVaultPod 收集了手续费，但没有转账到 AdminFeeVault
+2. AdminFeeVault 无法获取手续费进行分配
+3. 三个受益人（treasury 50%, team 30%, liquidity 20%）无法收到收益
+4. 手续费滞留在 Pod 层，无法发挥平台级管理功能
+
+---
+
+### 🔧 解决方案: 方案 A - FeeVaultPod 主动推送
+
+采用**阈值触发的自动推送模式**：
+
+#### 工作原理
+
+```
+FeeVaultPod.collectFee()
+    ↓
+累积手续费
+    ↓
+检查: feeBalances[token] >= transferThreshold[token] ?
+    ↓ YES
+自动转账到 AdminFeeVault
+    ↓
+调用 AdminFeeVault.collectFeeFromPod()
+    ↓
+AdminFeeVault 记录收入并分配给受益人
+```
+
+#### 优势
+
+1. **自动化**: 无需手动干预，达到阈值自动转账
+2. **Gas 优化**: 批量转账，减少交易次数
+3. **灵活配置**: 每个 Token 独立设置阈值
+4. **可控性**: Owner 可以随时调整阈值或禁用自动转账
+
+---
+
+### 📝 修改详情
+
+#### 1. FeeVaultPodStorage 扩展
+
+**文件**: `src/event/pod/FeeVaultPodStorage.sol`
+
+**新增字段**:
+```solidity
+/// @notice AdminFeeVault 合约地址
+address public adminFeeVault;
+
+/// @notice 自动转账阈值: token => threshold
+/// @dev 当 feeBalances[token] >= transferThreshold[token] 时自动转账到 AdminFeeVault
+mapping(address => uint256) public transferThreshold;
+```
+
+**存储槽调整**: `__gap` 从 40 减少到 38（使用了 2 个槽）
+
+---
+
+#### 2. IFeeVaultPod 接口更新
+
+**文件**: `src/interfaces/event/IFeeVaultPod.sol`
+
+**新增事件**:
+```solidity
+/// @notice 手续费转账到 AdminFeeVault 事件
+event FeeTransferredToAdmin(
+    address indexed token,
+    uint256 amount,
+    string category
+);
+
+/// @notice AdminFeeVault 地址更新事件
+event AdminFeeVaultUpdated(
+    address indexed oldVault,
+    address indexed newVault
+);
+
+/// @notice 转账阈值更新事件
+event TransferThresholdUpdated(
+    address indexed token,
+    uint256 oldThreshold,
+    uint256 newThreshold
+);
+```
+
+**新增函数**:
+```solidity
+/**
+ * @notice 设置 AdminFeeVault 地址
+ * @param vault AdminFeeVault 合约地址
+ */
+function setAdminFeeVault(address vault) external;
+
+/**
+ * @notice 设置自动转账阈值
+ * @param token Token 地址
+ * @param threshold 阈值金额
+ */
+function setTransferThreshold(address token, uint256 threshold) external;
+```
+
+---
+
+#### 3. FeeVaultPod 实现
+
+**文件**: `src/event/pod/FeeVaultPod.sol`
+
+**修改 1: 导入 AdminFeeVault 接口** (line 13)
+```solidity
+import "../../interfaces/admin/IAdminFeeVault.sol";
+```
+
+**修改 2: collectFee() 添加自动推送逻辑** (line 105-107)
+```solidity
+emit FeeCollected(token, payer, amount, eventId, feeType);
+
+// 检查是否需要自动转账到 AdminFeeVault
+_checkAndTransferToAdmin(token, feeType);
+```
+
+**修改 3: 新增配置函数** (line 189-210)
+```solidity
+/**
+ * @notice 设置 AdminFeeVault 地址
+ * @param vault AdminFeeVault 合约地址
+ */
+function setAdminFeeVault(address vault) external onlyOwner {
+    address oldVault = adminFeeVault;
+    adminFeeVault = vault;
+
+    emit AdminFeeVaultUpdated(oldVault, vault);
+}
+
+/**
+ * @notice 设置自动转账阈值
+ * @param token Token 地址
+ * @param threshold 阈值金额 (设为 0 表示禁用自动转账)
+ */
+function setTransferThreshold(address token, uint256 threshold) external onlyOwner {
+    uint256 oldThreshold = transferThreshold[token];
+    transferThreshold[token] = threshold;
+
+    emit TransferThresholdUpdated(token, oldThreshold, threshold);
+}
+```
+
+**修改 4: 新增内部函数 _checkAndTransferToAdmin()** (line 212-229)
+```solidity
+/**
+ * @notice 内部函数: 检查并自动转账到 AdminFeeVault
+ * @param token Token 地址
+ * @param category 手续费类别
+ */
+function _checkAndTransferToAdmin(address token, string memory category) internal {
+    // 检查前置条件
+    if (adminFeeVault == address(0)) return; // 未配置 AdminFeeVault
+
+    uint256 threshold = transferThreshold[token];
+    if (threshold == 0) return; // 未设置阈值或禁用自动转账
+
+    uint256 balance = feeBalances[token];
+    if (balance < threshold) return; // 未达到阈值
+
+    // 执行转账
+    _transferToAdminVault(token, balance, category);
+}
+```
+
+**修改 5: 新增内部函数 _transferToAdminVault()** (line 231-261)
+```solidity
+/**
+ * @notice 内部函数: 转账到 AdminFeeVault
+ * @param token Token 地址
+ * @param amount 转账金额
+ * @param category 手续费类别
+ */
+function _transferToAdminVault(address token, uint256 amount, string memory category) internal nonReentrant {
+    require(amount > 0, "FeeVaultPod: amount must be greater than zero");
+    require(adminFeeVault != address(0), "FeeVaultPod: AdminFeeVault not set");
+
+    uint256 balance = feeBalances[token];
+    require(balance >= amount, "FeeVaultPod: insufficient fee balance");
+
+    // 扣除余额
+    feeBalances[token] -= amount;
+
+    // 转账 Token
+    if (token == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)) {
+        // ETH
+        (bool sent, ) = adminFeeVault.call{value: amount}("");
+        require(sent, "FeeVaultPod: failed to send ETH");
+    } else {
+        // ERC20
+        IERC20(token).safeTransfer(adminFeeVault, amount);
+    }
+
+    // 调用 AdminFeeVault 记录收入
+    IAdminFeeVault(adminFeeVault).collectFeeFromPod(token, amount, category);
+
+    emit FeeTransferredToAdmin(token, amount, category);
+}
+```
+
+---
+
+### 🚀 部署配置流程
+
+现在完整的部署流程如下：
+
+```solidity
+// Step 1: 部署所有合约
+AdminFeeVault adminFeeVault = new AdminFeeVault();
+FeeVaultManager feeVaultManager = new FeeVaultManager();
+FeeVaultPod feeVaultPod = new FeeVaultPod();
+
+// Step 2: 初始化
+adminFeeVault.initialize(owner);
+feeVaultManager.initialize(owner, whitelister);
+feeVaultPod.initialize(owner, address(feeVaultManager), address(orderBookPod), feeRecipient);
+
+// Step 3: 配置受益人 (AdminFeeVault)
+adminFeeVault.setBeneficiary("treasury", treasuryAddress);
+adminFeeVault.setBeneficiary("team", teamAddress);
+adminFeeVault.setBeneficiary("liquidity", liquidityAddress);
+
+// Step 4: 配置分配比例 (AdminFeeVault)
+adminFeeVault.setAllocationRatio("treasury", 5000);  // 50%
+adminFeeVault.setAllocationRatio("team", 3000);      // 30%
+adminFeeVault.setAllocationRatio("liquidity", 2000); // 20%
+
+// Step 5: 授权 FeeVaultPod 向 AdminFeeVault 推送 ⭐ 关键步骤!
+adminFeeVault.addAuthorizedPod(address(feeVaultPod));
+
+// Step 6: 配置 FeeVaultPod 自动推送
+feeVaultPod.setAdminFeeVault(address(adminFeeVault));
+feeVaultPod.setTransferThreshold(USDT, 1000 * 10**6); // 阈值 1000 USDT
+
+// ✅ 集成完成! 手续费将自动流转到 AdminFeeVault 并分配给受益人
+```
+
+---
+
+### 📊 完整资金流
+
+```
+用户下单
+    ↓ (支付手续费)
+OrderBookPod
+    ↓ (调用 collectFee)
+FeeVaultPod
+    ↓ (累积手续费)
+feeBalances[token] 增加
+    ↓ (达到阈值)
+自动转账到 AdminFeeVault
+    ↓ (调用 collectFeeFromPod)
+AdminFeeVault 记录收入
+    ↓ (调用 distributeFees)
+按比例分配给受益人:
+    ├─ Treasury (50%)
+    ├─ Team (30%)
+    └─ Liquidity (20%)
+```
+
+---
+
+### 🎉 集成完成总结
+
+**已完成**:
+1. ✅ FeeVaultPodStorage 添加 AdminFeeVault 集成字段
+2. ✅ IFeeVaultPod 接口更新（新增事件和函数）
+3. ✅ FeeVaultPod 实现自动推送逻辑
+4. ✅ 添加配置函数（setAdminFeeVault, setTransferThreshold）
+5. ✅ 实现内部函数（_checkAndTransferToAdmin, _transferToAdminVault）
+6. ✅ 编译验证通过
+
+**集成特性**:
+- 🎯 阈值触发自动推送（Gas 优化）
+- 🔧 灵活配置（每个 Token 独立阈值）
+- 🔒 防重入保护（nonReentrant）
+- 📊 完整事件日志（便于前端监听）
+- 💰 支持 ETH 和 ERC20
+
+**下一步建议**:
+1. 编写单元测试验证自动推送逻辑
+2. 前端集成：监听 FeeTransferredToAdmin 事件
+3. 配置合适的阈值（建议根据 Gas 费用和交易频率调整）
+4. 部署后验证 AdminFeeVault 授权配置
+
+---
+
 ## 🐛 关键 Bug 修复: 奖金池逻辑错误
 
 ---

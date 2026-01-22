@@ -51,6 +51,15 @@ abstract contract FeeVaultPodStorage is IFeeVaultPod {
     /// @notice 用户支付的手续费: user => token => amount
     mapping(address => mapping(address => uint256)) public userPaidFees;
 
+    // ============ AdminFeeVault 集成 AdminFeeVault Integration ============
+
+    /// @notice AdminFeeVault 合约地址
+    address public adminFeeVault;
+
+    /// @notice 自动转账阈值: token => threshold
+    /// @dev 当 feeBalances[token] >= transferThreshold[token] 时自动转账到 AdminFeeVault
+    mapping(address => uint256) public transferThreshold;
+
     // ============ 常量 Constants ============
 
     /// @notice 费率精度(基点)
@@ -61,6 +70,6 @@ abstract contract FeeVaultPodStorage is IFeeVaultPod {
 
     // ============ 预留升级空间 Upgrade Reserve ============
 
-    /// @notice 预留 storage slots
-    uint256[40] private __gap;
+    /// @notice 预留 storage slots (减少 2 个用于新增变量)
+    uint256[38] private __gap;
 }
