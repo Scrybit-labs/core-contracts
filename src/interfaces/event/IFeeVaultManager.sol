@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "./IFeeVaultPod.sol";
-
 /**
  * @title IFeeVaultManager
  * @notice 手续费管理器接口 - 负责 Pod 路由和手续费管理
@@ -46,35 +44,6 @@ interface IFeeVaultManager {
 
     // ============ Pod 管理功能 ============
 
-    // ============ 手续费管理功能 ============
-
-    /**
-     * @notice 收取手续费
-     * @param vendorId Vendor ID
-     * @param eventId 事件 ID
-     * @param token Token 地址
-     * @param payer 支付者地址
-     * @param amount 手续费金额
-     * @param feeType 手续费类型
-     */
-    function collectFee(
-        uint256 vendorId,
-        uint256 eventId,
-        address token,
-        address payer,
-        uint256 amount,
-        string calldata feeType
-    ) external;
-
-    /**
-     * @notice 提取手续费
-     * @param vendorId Vendor ID
-     * @param token Token 地址
-     * @param recipient 接收者地址
-     * @param amount 提取金额
-     */
-    function withdrawFee(uint256 vendorId, address token, address recipient, uint256 amount) external;
-
     // ============ 查询功能 View Functions ============
 
     /**
@@ -85,4 +54,3 @@ interface IFeeVaultManager {
      */
     function getVendorPodFeeBalance(uint256 vendorId, address token) external view returns (uint256 balance);
 }
-

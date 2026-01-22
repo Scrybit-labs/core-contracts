@@ -19,7 +19,7 @@ abstract contract OracleAdapterStorage is IOracle {
         string eventDescription; // 事件描述
         uint256 timestamp; // 请求时间
         bool fulfilled; // 是否已完成
-        uint256 winningOutcomeIndex; // 获胜结果索引 (0-based)
+        uint8 winningOutcomeIndex; // 获胜结果索引 (0-based)
         address submitter; // 提交者地址
     }
 
@@ -30,7 +30,7 @@ abstract contract OracleAdapterStorage is IOracle {
     mapping(uint256 => bytes32) public eventIdToRequestId;
 
     /// @notice 事件结果映射: eventId => winningOutcomeIndex
-    mapping(uint256 => uint256) public eventResults;
+    mapping(uint256 => uint8) public eventResults;
 
     /// @notice 事件结果确认状态: eventId => confirmed
     mapping(uint256 => bool) public eventResultConfirmed;

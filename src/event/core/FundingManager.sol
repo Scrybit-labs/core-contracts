@@ -4,13 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import "./FundingManagerStorage.sol";
-import "../../interfaces/event/IPodFactory.sol";
 import "../../interfaces/event/IPodDeployer.sol";
+import "../../interfaces/event/IFundingPod.sol";
 
 /**
  * @title FundingManager
@@ -21,11 +17,8 @@ contract FundingManager is
     Initializable,
     OwnableUpgradeable,
     PausableUpgradeable,
-    ReentrancyGuard,
     FundingManagerStorage
 {
-    using SafeERC20 for IERC20;
-
     // ============ Modifiers ============
 
     /// @notice 仅 Factory 可调用
@@ -104,119 +97,6 @@ contract FundingManager is
         podDeployer = _podDeployer;
     }
 
-    // ============ Vendor-Based 入金/提现功能 ============
-
-    /**
-     * @notice ETH 入金到 Vendor 的 Pod
-     * @param vendorId Vendor ID
-     * @return success 是否成功
-     */
-    function depositEthIntoVendorPod(uint256 vendorId) external payable whenNotPaused nonReentrant returns (bool) {
-        require(msg.value > 0, "FundingManager: deposit amount must be greater than 0");
-
-        // 从内部映射获取 vendor 的 FundingPod
-        address fundingPodAddress = vendorToFundingPod[vendorId];
-        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
-
-        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
-
-        // 转账 ETH 到 Pod
-        (bool sent,) = address(fundingPod).call{value: msg.value}("");
-        require(sent, "FundingManager: failed to send ETH");
-
-        // 调用 Pod 的 deposit 函数 (pod will use msg.sender internally)
-        fundingPod.deposit(fundingPod.ETHAddress(), msg.value);
-
-        return true;
-    }
-
-    /**
-     * @notice ERC20 Token 入金到 Vendor 的 Pod
-     * @param vendorId Vendor ID
-     * @param tokenAddress Token 地址
-     * @param amount 金额
-     */
-    function depositErc20IntoVendorPod(uint256 vendorId, IERC20 tokenAddress, uint256 amount)
-        external
-        whenNotPaused
-        nonReentrant
-    {
-        require(amount > 0, "FundingManager: deposit amount must be greater than 0");
-
-        // 从内部映射获取 vendor 的 FundingPod
-        address fundingPodAddress = vendorToFundingPod[vendorId];
-        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
-
-        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
-
-        // 从用户转账到 Pod
-        tokenAddress.safeTransferFrom(msg.sender, address(fundingPod), amount);
-
-        // 调用 Pod 的 deposit 函数 (pod will use msg.sender internally)
-        fundingPod.deposit(address(tokenAddress), amount);
-    }
-
-    /**
-     * @notice 从 Vendor 的 Pod 提现
-     * @param vendorId Vendor ID
-     * @param tokenAddress Token 地址
-     * @param amount 金额
-     */
-    function withdrawFromVendorPod(uint256 vendorId, address tokenAddress, uint256 amount)
-        external
-        whenNotPaused
-        nonReentrant
-    {
-        require(amount > 0, "FundingManager: withdraw amount must be greater than 0");
-
-        // 从内部映射获取 vendor 的 FundingPod
-        address fundingPodAddress = vendorToFundingPod[vendorId];
-        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
-
-        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
-
-        // 调用 Pod 的 withdraw 函数 (传入真实用户地址)
-        fundingPod.withdraw(msg.sender, tokenAddress, payable(msg.sender), amount);
-    }
-
-    // ============ 虚拟 Long Token 管理 Virtual Long Token Management ============
-
-    /**
-     * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long Token)
-     * @param fundingPod Pod 地址
-     * @param eventId 事件 ID
-     * @param tokenAddress Token 地址
-     * @param amount 铸造数量
-     */
-    function mintCompleteSet(IFundingPod fundingPod, uint256 eventId, address tokenAddress, uint256 amount)
-        external
-        whenNotPaused
-        nonReentrant
-    {
-        require(amount > 0, "FundingManager: mint amount must be greater than 0");
-
-        // 调用 Pod 的 mintCompleteSet 函数
-        fundingPod.mintCompleteSet(msg.sender, eventId, tokenAddress, amount);
-    }
-
-    /**
-     * @notice 销毁完整集合 (用户销毁所有结果各 amount 份 Long Token,获得 amount USDT)
-     * @param fundingPod Pod 地址
-     * @param eventId 事件 ID
-     * @param tokenAddress Token 地址
-     * @param amount 销毁数量
-     */
-    function burnCompleteSet(IFundingPod fundingPod, uint256 eventId, address tokenAddress, uint256 amount)
-        external
-        whenNotPaused
-        nonReentrant
-    {
-        require(amount > 0, "FundingManager: burn amount must be greater than 0");
-
-        // 调用 Pod 的 burnCompleteSet 函数
-        fundingPod.burnCompleteSet(msg.sender, eventId, tokenAddress, amount);
-    }
-
     // ============ 查询功能 View Functions ============
 
     /**
@@ -254,7 +134,7 @@ contract FundingManager is
      * @param user 用户地址
      * @param tokenAddress Token 地址
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      * @return position Long Token 数量
      */
     function getLongPosition(
@@ -262,9 +142,9 @@ contract FundingManager is
         address user,
         address tokenAddress,
         uint256 eventId,
-        uint256 outcomeId
+        uint8 outcomeIndex
     ) external view returns (uint256) {
-        return fundingPod.getLongPosition(user, tokenAddress, eventId, outcomeId);
+        return fundingPod.getLongPosition(user, tokenAddress, eventId, outcomeIndex);
     }
 
     /**

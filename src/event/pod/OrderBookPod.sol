@@ -49,7 +49,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     /**
      * @notice 下单 (Public - users can call directly)
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      * @param side 买卖方向
      * @param price 价格
      * @param amount 数量
@@ -58,7 +58,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
      */
     function placeOrder(
         uint256 eventId,
-        uint256 outcomeId,
+        uint8 outcomeIndex,
         OrderSide side,
         uint256 price,
         uint256 amount,
@@ -67,7 +67,11 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         address user = msg.sender; // Direct caller
 
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
-        if (!supportedOutcomes[eventId][outcomeId]) revert OutcomeNotSupported(eventId, outcomeId);
+        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
+        if (outcomeIndex >= eventOrderBook.outcomeCount) {
+            revert OutcomeNotSupported(eventId, outcomeIndex);
+        }
+        if (!supportedOutcomes[eventId][outcomeIndex]) revert OutcomeNotSupported(eventId, outcomeIndex);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
         if (price == 0 || price > MAX_PRICE) revert InvalidPrice(price);
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
@@ -92,7 +96,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 side == OrderSide.Buy, // 是否为买单
                 requiredAmount, // 锁定数量
                 eventId, // 事件 ID
-                outcomeId // 结果 ID
+                outcomeIndex // 结果索引
             );
 
         // 收取手续费
@@ -112,7 +116,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             orderId: orderId,
             user: user, // 使用传入的真实用户地址
             eventId: eventId,
-            outcomeId: outcomeId,
+            outcomeIndex: outcomeIndex,
             side: side,
             price: price,
             amount: amount,
@@ -134,10 +138,10 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             orderId,
             user, // 使用传入的真实用户地址
             eventId,
-            outcomeId,
-            side,
-            price,
-            amount
+                outcomeIndex,
+                side,
+                price,
+                amount
         );
     }
 
@@ -164,38 +168,38 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                     order.tokenAddress,
                     order.side == OrderSide.Buy, // 是否为买单
                     order.eventId,
-                    order.outcomeId
+                    order.outcomeIndex
                 );
         }
 
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
     }
 
-    function settleEvent(uint256 eventId, uint256 winningOutcomeId) external onlyEventPod {
+    function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventPod {
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
-        if (!supportedOutcomes[eventId][winningOutcomeId]) {
-            revert OutcomeNotSupported(eventId, winningOutcomeId);
+        if (!supportedOutcomes[eventId][winningOutcomeIndex]) {
+            revert OutcomeNotSupported(eventId, winningOutcomeIndex);
         }
 
         eventSettled[eventId] = true;
-        eventResults[eventId] = winningOutcomeId;
+        eventResults[eventId] = winningOutcomeIndex;
 
         _cancelAllPendingOrders(eventId);
-        _settlePositions(eventId, winningOutcomeId);
+        _settlePositions(eventId, winningOutcomeIndex);
 
-        emit EventSettled(eventId, winningOutcomeId);
+        emit EventSettled(eventId, winningOutcomeIndex);
     }
 
-    function addEvent(uint256 eventId, uint256 outcomeCount) external {
+    function addEvent(uint256 eventId, uint8 outcomeCount) external {
         require(!supportedEvents[eventId], "OrderBookPod: event exists");
-        require(outcomeCount > 0, "OrderBookPod: outcomeCount must be greater than 0");
+        require(outcomeCount > 0 && outcomeCount <= 32, "OrderBookPod: invalid outcomeCount");
         supportedEvents[eventId] = true;
 
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        for (uint256 i = 0; i < outcomeCount; i++) {
+        eventOrderBook.outcomeCount = outcomeCount;
+        for (uint8 i = 0; i < outcomeCount; i++) {
             supportedOutcomes[eventId][i] = true;
-            eventOrderBook.supportedOutcomes.push(i);
         }
 
         // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)
@@ -204,9 +208,12 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         emit EventAdded(eventId, outcomeCount);
     }
 
-    function getBestBid(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount) {
+    function getBestBid(
+        uint256 eventId,
+        uint8 outcomeIndex
+    ) external view returns (uint256 price, uint256 amount) {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeIndex];
 
         if (outcomeOrderBook.buyPriceLevels.length > 0) {
             price = outcomeOrderBook.buyPriceLevels[0];
@@ -214,9 +221,12 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         }
     }
 
-    function getBestAsk(uint256 eventId, uint256 outcomeId) external view returns (uint256 price, uint256 amount) {
+    function getBestAsk(
+        uint256 eventId,
+        uint8 outcomeIndex
+    ) external view returns (uint256 price, uint256 amount) {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeIndex];
 
         if (outcomeOrderBook.sellPriceLevels.length > 0) {
             price = outcomeOrderBook.sellPriceLevels[0];
@@ -230,7 +240,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function _matchOrder(uint256 orderId) internal {
         Order storage order = orders[orderId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
 
         if (order.side == OrderSide.Buy) {
             _matchBuy(orderId, outcomeOrderBook);
@@ -254,8 +264,8 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 if (buyOrder.eventId != sellOrder.eventId) {
                     revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
                 }
-                if (buyOrder.outcomeId != sellOrder.outcomeId) {
-                    revert OutcomeMismatch(buyOrder.outcomeId, sellOrder.outcomeId);
+                if (buyOrder.outcomeIndex != sellOrder.outcomeIndex) {
+                    revert OutcomeMismatch(buyOrder.outcomeIndex, sellOrder.outcomeIndex);
                 }
                 _executeMatch(buyOrderId, sellOrderId);
             }
@@ -277,8 +287,8 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 if (buyOrder.eventId != sellOrder.eventId) {
                     revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
                 }
-                if (buyOrder.outcomeId != sellOrder.outcomeId) {
-                    revert OutcomeMismatch(buyOrder.outcomeId, sellOrder.outcomeId);
+                if (buyOrder.outcomeIndex != sellOrder.outcomeIndex) {
+                    revert OutcomeMismatch(buyOrder.outcomeIndex, sellOrder.outcomeIndex);
                 }
                 _executeMatch(buyOrderId, sellOrderId);
             }
@@ -306,14 +316,14 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         }
 
         // ✅ 持仓管理: 记录买家持仓增加
-        positions[buyOrder.eventId][buyOrder.outcomeId][buyOrder.user] += matchAmount;
-        _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeId, buyOrder.user);
+        positions[buyOrder.eventId][buyOrder.outcomeIndex][buyOrder.user] += matchAmount;
+        _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeIndex, buyOrder.user);
 
         // ✅ 持仓管理: 卖家持仓减少(卖出做空)
-        if (positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] >= matchAmount) {
-            positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] -= matchAmount;
+        if (positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] >= matchAmount) {
+            positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] -= matchAmount;
         } else {
-            positions[sellOrder.eventId][sellOrder.outcomeId][sellOrder.user] = 0;
+            positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] = 0;
         }
 
         // 集成 FundingPod: 资金结算 (虚拟 Long Token 模型)
@@ -327,7 +337,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 matchAmount, // 成交数量
                 matchPrice, // 成交价格
                 buyOrder.eventId, // 事件 ID
-                buyOrder.outcomeId // 结果 ID (买卖同一 outcome)
+                buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
             );
 
         // ✅ 收取撮合手续费
@@ -361,7 +371,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
             sellOrder.status = OrderStatus.Partial;
         }
 
-        emit OrderMatched(buyOrderId, sellOrderId, buyOrder.eventId, buyOrder.outcomeId, matchPrice, matchAmount);
+        emit OrderMatched(buyOrderId, sellOrderId, buyOrder.eventId, buyOrder.outcomeIndex, matchPrice, matchAmount);
     }
 
     // ------------------------------------------------------------
@@ -370,7 +380,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function _addToOrderBook(uint256 orderId) internal {
         Order storage order = orders[orderId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
 
         if (order.side == OrderSide.Buy) {
             if (outcomeOrderBook.buyOrdersByPrice[order.price].length == 0) {
@@ -388,7 +398,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function _removeFromOrderBook(uint256 orderId) internal {
         Order storage order = orders[orderId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeId];
+        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
 
         if (order.side == OrderSide.Buy) {
             uint256[] storage priceOrders = outcomeOrderBook.buyOrdersByPrice[order.price];
@@ -482,9 +492,8 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function _cancelAllPendingOrders(uint256 eventId) internal {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
 
-        for (uint256 i = 0; i < eventOrderBook.supportedOutcomes.length; i++) {
-            uint256 outcomeId = eventOrderBook.supportedOutcomes[i];
-            OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeId];
+        for (uint8 i = 0; i < eventOrderBook.outcomeCount; i++) {
+            OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[i];
             _cancelMarketOrders(outcomeOrderBook);
         }
     }
@@ -507,7 +516,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                                 order.tokenAddress,
                                 order.side == OrderSide.Buy, // 是否为买单
                                 order.eventId,
-                                order.outcomeId
+                                order.outcomeIndex
                             );
                     }
                 }
@@ -531,7 +540,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
                                 order.tokenAddress,
                                 order.side == OrderSide.Buy, // 是否为买单
                                 order.eventId,
-                                order.outcomeId
+                                order.outcomeIndex
                             );
                     }
                 }
@@ -540,9 +549,9 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     }
 
     // ✅ 结算持仓 - 集成 FundingPod 分配奖金
-    function _settlePositions(uint256 eventId, uint256 winningOutcomeId) internal {
+    function _settlePositions(uint256 eventId, uint8 winningOutcomeIndex) internal {
         // 获取获胜结果的所有持仓者
-        address[] storage winners = positionHolders[eventId][winningOutcomeId];
+        address[] storage winners = positionHolders[eventId][winningOutcomeIndex];
         if (winners.length == 0) return; // 没有获胜者
 
         // 构建获胜者和持仓数组
@@ -551,7 +560,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
 
         // 收集获胜者持仓
         for (uint256 i = 0; i < winners.length; i++) {
-            winningPositions[i] = positions[eventId][winningOutcomeId][winners[i]];
+            winningPositions[i] = positions[eventId][winningOutcomeIndex][winners[i]];
 
             // 从该用户的订单中获取 token 地址
             if (tokenAddress == address(0) && userOrders[winners[i]].length > 0) {
@@ -567,7 +576,7 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
 
         // 如果找到了 token 地址,调用 FundingPod 结算
         if (tokenAddress != address(0)) {
-            IFundingPod(fundingPod).settleEvent(eventId, winningOutcomeId, tokenAddress, winners, winningPositions);
+            IFundingPod(fundingPod).settleEvent(eventId, winningOutcomeIndex, tokenAddress, winners, winningPositions);
         }
     }
 
@@ -576,13 +585,13 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     /**
      * @notice 记录持仓者(避免重复记录)
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      * @param user 用户地址
      */
-    function _recordPositionHolder(uint256 eventId, uint256 outcomeId, address user) internal {
-        if (!isPositionHolder[eventId][outcomeId][user]) {
-            positionHolders[eventId][outcomeId].push(user);
-            isPositionHolder[eventId][outcomeId][user] = true;
+    function _recordPositionHolder(uint256 eventId, uint8 outcomeIndex, address user) internal {
+        if (!isPositionHolder[eventId][outcomeIndex][user]) {
+            positionHolders[eventId][outcomeIndex].push(user);
+            isPositionHolder[eventId][outcomeIndex][user] = true;
         }
     }
 
@@ -600,12 +609,16 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     /**
      * @notice 获取用户持仓
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      * @param user 用户地址
      * @return position 持仓数量
      */
-    function getPosition(uint256 eventId, uint256 outcomeId, address user) external view returns (uint256 position) {
-        return positions[eventId][outcomeId][user];
+    function getPosition(
+        uint256 eventId,
+        uint8 outcomeIndex,
+        address user
+    ) external view returns (uint256 position) {
+        return positions[eventId][outcomeIndex][user];
     }
 
     // ============ 管理功能 Admin Functions ============

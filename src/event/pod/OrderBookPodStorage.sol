@@ -28,8 +28,8 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
     /// @notice 支持的事件映射
     mapping(uint256 => bool) public supportedEvents;
 
-    /// @notice 支持的结果映射: eventId => outcomeId => isSupported
-    mapping(uint256 => mapping(uint256 => bool)) public supportedOutcomes;
+    /// @notice 支持的结果映射: eventId => outcomeIndex => isSupported
+    mapping(uint256 => mapping(uint8 => bool)) public supportedOutcomes;
 
     // ============ 订单管理 Order Management ============
 
@@ -54,8 +54,8 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
 
     /// @notice 事件订单簿(每个结果一个订单簿)
     struct EventOrderBook {
-        mapping(uint256 => OutcomeOrderBook) outcomeOrderBooks;
-        uint256[] supportedOutcomes;
+        mapping(uint8 => OutcomeOrderBook) outcomeOrderBooks;
+        uint8 outcomeCount;
     }
 
     /// @notice 事件订单簿映射: eventId => EventOrderBook
@@ -63,15 +63,15 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
 
     // ============ 持仓管理 Position Management ============
 
-    /// @notice 用户持仓: eventId => outcomeId => user => position
-    mapping(uint256 => mapping(uint256 => mapping(address => uint256))) public positions;
+    /// @notice 用户持仓: eventId => outcomeIndex => user => position
+    mapping(uint256 => mapping(uint8 => mapping(address => uint256))) public positions;
 
-    /// @notice 事件的所有持仓用户: eventId => outcomeId => users[]
+    /// @notice 事件的所有持仓用户: eventId => outcomeIndex => users[]
     /// @dev 用于事件结算时遍历所有获胜者
-    mapping(uint256 => mapping(uint256 => address[])) internal positionHolders;
+    mapping(uint256 => mapping(uint8 => address[])) internal positionHolders;
 
-    /// @notice 用户是否已记录为持仓者: eventId => outcomeId => user => isRecorded
-    mapping(uint256 => mapping(uint256 => mapping(address => bool))) internal isPositionHolder;
+    /// @notice 用户是否已记录为持仓者: eventId => outcomeIndex => user => isRecorded
+    mapping(uint256 => mapping(uint8 => mapping(address => bool))) internal isPositionHolder;
 
     // ============ 常量 Constants ============
 
@@ -86,6 +86,6 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
     /// @notice 事件结算状态: eventId => settled
     mapping(uint256 => bool) public eventSettled;
 
-    /// @notice 事件结果: eventId => winningOutcomeId
-    mapping(uint256 => uint256) public eventResults;
+    /// @notice 事件结果: eventId => winningOutcomeIndex
+    mapping(uint256 => uint8) public eventResults;
 }

@@ -170,7 +170,7 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      */
     function fulfillResult(
         uint256 eventId,
-        uint256 winningOutcomeIndex,
+        uint8 winningOutcomeIndex,
         bytes calldata proof
     ) external override onlyAuthorizedOracle eventMustExist(eventId) {
         _settleEvent(eventId, winningOutcomeIndex, proof);
@@ -184,7 +184,7 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      */
     function settleEvent(
         uint256 eventId,
-        uint256 winningOutcomeIndex,
+        uint8 winningOutcomeIndex,
         bytes calldata proof
     ) external override onlyAuthorizedOracle eventMustExist(eventId) {
         _settleEvent(eventId, winningOutcomeIndex, proof);
@@ -196,14 +196,17 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 预言机证明数据 (Merkle Proof)
      */
-    function _settleEvent(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) internal {
+    function _settleEvent(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) internal {
         Event storage evt = events[eventId];
 
         require(evt.status == EventStatus.Active, "EventPod: event not active");
         require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
 
         // 验证 winningOutcomeIndex 是否有效
-        require(winningOutcomeIndex < evt.outcomes.length, "EventPod: invalid winning outcome index");
+        require(
+            winningOutcomeIndex < uint8(evt.outcomes.length),
+            "EventPod: invalid winning outcome index"
+        );
 
         // 验证 Merkle Proof
         _verifyMerkleProof(eventId, winningOutcomeIndex, proof);
@@ -310,7 +313,7 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      * @param proof Merkle Proof 证明数据
      * @dev proof 格式: abi.encode(bytes32[] merkleProof, bytes32 root)
      */
-    function _verifyMerkleProof(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) internal view {
+    function _verifyMerkleProof(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) internal view {
         // 如果 proof 为空,跳过验证 (向后兼容,但不推荐)
         if (proof.length == 0) {
             return;
@@ -384,10 +387,10 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
      */
     function getOutcome(
         uint256 eventId,
-        uint256 outcomeIndex
+        uint8 outcomeIndex
     ) external view eventMustExist(eventId) returns (Outcome memory) {
         Event storage evt = events[eventId];
-        require(outcomeIndex < evt.outcomes.length, "EventPod: outcome index out of bounds");
+        require(outcomeIndex < uint8(evt.outcomes.length), "EventPod: outcome index out of bounds");
         return evt.outcomes[outcomeIndex];
     }
 

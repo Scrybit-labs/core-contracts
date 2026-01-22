@@ -31,7 +31,7 @@ interface IEventPod {
         EventStatus status; // 事件状态
         address creator; // 创建者地址
         Outcome[] outcomes; // 所有结果选项列表 (0-indexed)
-        uint256 winningOutcomeIndex; // 获胜结果索引 (结算后设置)
+        uint8 winningOutcomeIndex; // 获胜结果索引 (结算后设置)
     }
 
     // ============ 事件 Events ============
@@ -43,13 +43,13 @@ interface IEventPod {
     event EventStatusChanged(uint256 indexed eventId, EventStatus oldStatus, EventStatus newStatus);
 
     /// @notice 事件结算事件
-    event EventSettled(uint256 indexed eventId, uint256 winningOutcomeIndex, uint256 settlementTime);
+    event EventSettled(uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 settlementTime);
 
     /// @notice 事件取消事件
     event EventCancelled(uint256 indexed eventId, string reason);
 
     /// @notice 预言机结果接收事件
-    event OracleResultReceived(uint256 indexed eventId, uint256 winningOutcomeIndex, address indexed oracle);
+    event OracleResultReceived(uint256 indexed eventId, uint8 winningOutcomeIndex, address indexed oracle);
 
     // ============ 核心功能 Functions ============
 
@@ -90,7 +90,7 @@ interface IEventPod {
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 预言机证明数据
      */
-    function settleEvent(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) external;
+    function settleEvent(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) external;
 
     /**
      * @notice 取消事件
@@ -121,7 +121,7 @@ interface IEventPod {
      * @param outcomeIndex 结果索引 (0-based)
      * @return outcome 结果选项信息
      */
-    function getOutcome(uint256 eventId, uint256 outcomeIndex) external view returns (Outcome memory);
+    function getOutcome(uint256 eventId, uint8 outcomeIndex) external view returns (Outcome memory);
 
     /**
      * @notice 列出所有活跃事件 ID
