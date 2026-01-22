@@ -11,40 +11,46 @@ import "./IFeeVaultPod.sol";
 interface IFeeVaultManager {
     // ============ 事件 Events ============
 
-    /// @notice Pod 添加到白名单事件
-    event PodWhitelisted(address indexed pod);
+    /// @notice FeeVaultPod 部署事件
+    event FeeVaultPodDeployed(uint256 indexed vendorId, address indexed feeVaultPod);
 
-    /// @notice Pod 从白名单移除事件
-    event PodRemovedFromWhitelist(address indexed pod);
+    // ============ Pod 部署功能 ============
 
-    /// @notice 事件注册到 Pod 事件
-    event EventRegisteredToPod(uint256 indexed eventId, address indexed pod);
+    /**
+     * @notice 部署 FeeVaultPod (仅 Factory 可调用)
+     * @param vendorId Vendor ID
+     * @param vendorAddress Vendor 地址
+     * @param feeRecipient 手续费接收地址
+     * @param orderBookPod OrderBookPod 地址
+     * @return feeVaultPod FeeVaultPod 地址
+     */
+    function deployFeeVaultPod(
+        uint256 vendorId,
+        address vendorAddress,
+        address feeRecipient,
+        address orderBookPod
+    ) external returns (address feeVaultPod);
+
+    /**
+     * @notice 获取 vendor 的 FeeVaultPod 地址
+     * @param vendorId Vendor ID
+     * @return feeVaultPod FeeVaultPod 地址
+     */
+    function getVendorFeeVaultPod(uint256 vendorId) external view returns (address);
+
+    /**
+     * @notice 设置 PodDeployer 地址
+     * @param _podDeployer PodDeployer 合约地址
+     */
+    function setPodDeployer(address _podDeployer) external;
 
     // ============ Pod 管理功能 ============
-
-    /**
-     * @notice 添加 Pod 到白名单
-     * @param pod Pod 地址
-     */
-    function addPodToWhitelist(IFeeVaultPod pod) external;
-
-    /**
-     * @notice 从白名单移除 Pod
-     * @param pod Pod 地址
-     */
-    function removePodFromWhitelist(IFeeVaultPod pod) external;
-
-    /**
-     * @notice 注册事件到 Pod
-     * @param pod Pod 地址
-     * @param eventId 事件 ID
-     */
-    function registerEventToPod(IFeeVaultPod pod, uint256 eventId) external;
 
     // ============ 手续费管理功能 ============
 
     /**
-     * @notice 收取手续费(通过路由到对应 Pod)
+     * @notice 收取手续费
+     * @param vendorId Vendor ID
      * @param eventId 事件 ID
      * @param token Token 地址
      * @param payer 支付者地址
@@ -52,6 +58,7 @@ interface IFeeVaultManager {
      * @param feeType 手续费类型
      */
     function collectFee(
+        uint256 vendorId,
         uint256 eventId,
         address token,
         address payer,
@@ -61,42 +68,21 @@ interface IFeeVaultManager {
 
     /**
      * @notice 提取手续费
-     * @param pod Pod 地址
+     * @param vendorId Vendor ID
      * @param token Token 地址
      * @param recipient 接收者地址
      * @param amount 提取金额
      */
-    function withdrawFee(
-        IFeeVaultPod pod,
-        address token,
-        address recipient,
-        uint256 amount
-    ) external;
+    function withdrawFee(uint256 vendorId, address token, address recipient, uint256 amount) external;
 
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 检查 Pod 是否在白名单中
-     * @param pod Pod 地址
-     * @return isWhitelisted 是否在白名单
-     */
-    function isPodWhitelisted(IFeeVaultPod pod) external view returns (bool);
-
-    /**
-     * @notice 获取事件对应的 Pod
-     * @param eventId 事件 ID
-     * @return pod Pod 地址
-     */
-    function getEventPod(uint256 eventId) external view returns (IFeeVaultPod pod);
-
-    /**
-     * @notice 获取 Pod 的手续费余额
-     * @param pod Pod 地址
+     * @notice 获取 Vendor Pod 的手续费余额
+     * @param vendorId Vendor ID
      * @param token Token 地址
      * @return balance 手续费余额
      */
-    function getPodFeeBalance(
-        IFeeVaultPod pod,
-        address token
-    ) external view returns (uint256 balance);
+    function getVendorPodFeeBalance(uint256 vendorId, address token) external view returns (uint256 balance);
 }
+

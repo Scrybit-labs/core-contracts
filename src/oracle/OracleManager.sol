@@ -14,12 +14,7 @@ import "./OracleAdapter.sol";
  * @notice 预言机管理器 - 管理预言机适配器的生命周期
  * @dev 支持多预言机适配器和统一管理
  */
-contract OracleManager is
-    Initializable,
-    OwnableUpgradeable,
-    PausableUpgradeable,
-    OracleManagerStorage
-{
+contract OracleManager is Initializable, OwnableUpgradeable, PausableUpgradeable, OracleManagerStorage {
     // ============ Constructor & Initializer ============
 
     constructor() {
@@ -42,22 +37,13 @@ contract OracleManager is
      * @param adapter 适配器地址
      * @param name 适配器名称
      */
-    function addOracleAdapter(address adapter, string calldata name)
-        external
-        onlyOwner
-        whenNotPaused
-    {
+    function addOracleAdapter(address adapter, string calldata name) external onlyOwner whenNotPaused {
         if (adapter == address(0)) revert InvalidAdapter(adapter);
         if (adapters[adapter].adapter != address(0)) {
             revert AdapterAlreadyExists(adapter);
         }
 
-        adapters[adapter] = AdapterInfo({
-            adapter: adapter,
-            name: name,
-            active: true,
-            addedAt: block.timestamp
-        });
+        adapters[adapter] = AdapterInfo({adapter: adapter, name: name, active: true, addedAt: block.timestamp});
 
         adaptersList.push(adapter);
         totalAdapters++;
@@ -118,10 +104,7 @@ contract OracleManager is
      * @param oracle 预言机地址
      * @param adapter 适配器地址
      */
-    function authorizeOracle(address oracle, address adapter)
-        external
-        onlyOwner
-    {
+    function authorizeOracle(address oracle, address adapter) external onlyOwner {
         require(oracle != address(0), "OracleManager: invalid oracle");
         if (adapters[adapter].adapter == address(0)) {
             revert AdapterNotFound(adapter);
@@ -144,10 +127,7 @@ contract OracleManager is
      * @param oracle 预言机地址
      * @param adapter 适配器地址
      */
-    function unauthorizeOracle(address oracle, address adapter)
-        external
-        onlyOwner
-    {
+    function unauthorizeOracle(address oracle, address adapter) external onlyOwner {
         if (adapters[adapter].adapter == address(0)) {
             revert AdapterNotFound(adapter);
         }
@@ -204,11 +184,7 @@ contract OracleManager is
      * @param adapter 适配器地址
      * @return info 适配器信息
      */
-    function getAdapterInfo(address adapter)
-        external
-        view
-        returns (AdapterInfo memory info)
-    {
+    function getAdapterInfo(address adapter) external view returns (AdapterInfo memory info) {
         return adapters[adapter];
     }
 
@@ -217,11 +193,7 @@ contract OracleManager is
      * @param oracle 预言机地址
      * @return _adapters 适配器地址列表
      */
-    function getOracleAdapters(address oracle)
-        external
-        view
-        returns (address[] memory _adapters)
-    {
+    function getOracleAdapters(address oracle) external view returns (address[] memory _adapters) {
         return oracleAdaptersList[oracle];
     }
 
@@ -231,11 +203,7 @@ contract OracleManager is
      * @param adapter 适配器地址
      * @return authorized 是否授权
      */
-    function isOracleAuthorized(address oracle, address adapter)
-        external
-        view
-        returns (bool authorized)
-    {
+    function isOracleAuthorized(address oracle, address adapter) external view returns (bool authorized) {
         return oracleAuthorizations[oracle][adapter];
     }
 

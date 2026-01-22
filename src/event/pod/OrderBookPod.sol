@@ -18,11 +18,6 @@ import "../../interfaces/event/IFeeVaultPod.sol";
 contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable, OrderBookPodStorage {
     // ============ Modifiers ============
 
-    modifier onlyOrderBookManager() {
-        require(msg.sender == orderBookManager, "OrderBookPod: only orderBookManager");
-        _;
-    }
-
     modifier onlyEventPod() {
         require(msg.sender == eventPod, "OrderBookPod: only eventPod");
         _;
@@ -43,7 +38,6 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     ) public initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-
         eventPod = _eventPod;
         fundingPod = _fundingPod;
         feeVaultPod = _feeVaultPod;
@@ -51,20 +45,29 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     }
 
     // ============ 外部函数 External Functions ============
+
+    /**
+     * @notice 下单 (Public - users can call directly)
+     * @param eventId 事件 ID
+     * @param outcomeId 结果 ID
+     * @param side 买卖方向
+     * @param price 价格
+     * @param amount 数量
+     * @param tokenAddress Token 地址
+     * @return orderId 订单 ID
+     */
     function placeOrder(
-        address user,
         uint256 eventId,
         uint256 outcomeId,
         OrderSide side,
         uint256 price,
         uint256 amount,
         address tokenAddress
-    ) external whenNotPaused onlyOrderBookManager returns (uint256 orderId) {
-        require(user != address(0), "OrderBookPod: invalid user address");
+    ) external whenNotPaused returns (uint256 orderId) {
+        address user = msg.sender; // Direct caller
+
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
-        if (!supportedOutcomes[eventId][outcomeId]) {
-            revert OutcomeNotSupported(eventId, outcomeId);
-        }
+        if (!supportedOutcomes[eventId][outcomeId]) revert OutcomeNotSupported(eventId, outcomeId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
         if (price == 0 || price > MAX_PRICE) revert InvalidPrice(price);
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
@@ -139,7 +142,8 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         );
     }
 
-    function cancelOrder(uint256 orderId) external onlyOrderBookManager {
+
+    function cancelOrder(uint256 orderId) external {
         Order storage order = orders[orderId];
 
         if (order.status != OrderStatus.Pending && order.status != OrderStatus.Partial) {
@@ -176,12 +180,12 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         }
 
         eventSettled[eventId] = true;
-        eventResults[eventId] = winningOutcomeId;
+        eventResults[eventId] = winningOutcomeIndex;
 
         _cancelAllPendingOrders(eventId);
-        _settlePositions(eventId, winningOutcomeId);
+        _settlePositions(eventId, winningOutcomeIndex);
 
-        emit EventSettled(eventId, winningOutcomeId);
+        emit EventSettled(eventId, winningOutcomeIndex);
     }
 
     function addEvent(uint256 eventId, uint256[] calldata outcomeIds) external onlyOrderBookManager {
@@ -189,11 +193,9 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         supportedEvents[eventId] = true;
 
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        for (uint256 i = 0; i < outcomeIds.length; i++) {
-            uint256 outcomeId = outcomeIds[i];
-            require(outcomeId > 0, "OrderBookPod: invalid outcome");
-            supportedOutcomes[eventId][outcomeId] = true;
-            eventOrderBook.supportedOutcomes.push(outcomeId);
+        for (uint256 i = 0; i < outcomeCount; i++) {
+            supportedOutcomes[eventId][i] = true;
+            eventOrderBook.supportedOutcomes.push(i);
         }
 
         // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)

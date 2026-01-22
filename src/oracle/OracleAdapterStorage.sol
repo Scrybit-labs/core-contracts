@@ -13,14 +13,14 @@ abstract contract OracleAdapterStorage is IOracle {
 
     /// @notice 请求信息结构体
     struct OracleRequest {
-        bytes32 requestId;         // 请求 ID
-        uint256 eventId;           // 事件 ID
-        address requester;         // 请求者地址
-        string eventDescription;   // 事件描述
-        uint256 timestamp;         // 请求时间
-        bool fulfilled;            // 是否已完成
-        uint256 winningOutcomeId;  // 获胜结果 ID
-        address submitter;         // 提交者地址
+        bytes32 requestId; // 请求 ID
+        uint256 eventId; // 事件 ID
+        address requester; // 请求者地址
+        string eventDescription; // 事件描述
+        uint256 timestamp; // 请求时间
+        bool fulfilled; // 是否已完成
+        uint256 winningOutcomeIndex; // 获胜结果索引 (0-based)
+        address submitter; // 提交者地址
     }
 
     /// @notice 请求映射: requestId => OracleRequest
@@ -29,7 +29,7 @@ abstract contract OracleAdapterStorage is IOracle {
     /// @notice 事件到请求的映射: eventId => requestId
     mapping(uint256 => bytes32) public eventIdToRequestId;
 
-    /// @notice 事件结果映射: eventId => winningOutcomeId
+    /// @notice 事件结果映射: eventId => winningOutcomeIndex
     mapping(uint256 => uint256) public eventResults;
 
     /// @notice 事件结果确认状态: eventId => confirmed
@@ -42,6 +42,9 @@ abstract contract OracleAdapterStorage is IOracle {
 
     /// @notice 授权的预言机列表
     address[] internal authorizedOraclesList;
+
+    /// @notice 授权的 EventPods 映射 (for direct pod interaction)
+    mapping(address => bool) public authorizedEventPods;
 
     /// @notice 预言机信誉分数: oracle => score
     mapping(address => uint256) public oracleReputation;
@@ -81,6 +84,6 @@ abstract contract OracleAdapterStorage is IOracle {
 
     // ============ 预留升级空间 Upgrade Reserve ============
 
-    /// @notice 预留 storage slots
-    uint256[35] private __gap;
+    /// @notice 预留 storage slots (减去1个mapping = 34 slots)
+    uint256[34] private __gap;
 }

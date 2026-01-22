@@ -5,15 +5,22 @@ import "../../interfaces/event/IOrderBookManager.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
 
 abstract contract OrderBookManagerStorage is IOrderBookManager {
-    /// @notice Pod 白名单映射
-    mapping(IOrderBookPod => bool) public podIsWhitelisted;
+    /// @notice Vendor ID 到 OrderBookPod 地址的映射
+    mapping(uint256 => address) public vendorToOrderBookPod;
 
-    /// @notice 事件到 Pod 的映射
-    mapping(uint256 => IOrderBookPod) public eventIdToPod;
+    /// @notice OrderBookPod 部署状态
+    mapping(address => bool) internal orderBookPodIsDeployed;
+
+    /// @notice PodDeployer 合约地址
+    address public podDeployer;
 
     /// @notice 授权的调用者映射 (EventManager/EventPod 等)
     mapping(address => bool) public authorizedCallers;
 
-    /// @notice 预留升级空间 (从 99 改为 98)
-    uint256[98] private _gap;
+    /// @notice PodFactory 合约地址
+    address public factory;
+
+    /// @notice 预留升级空间
+    /// @dev 减去已使用的 slot 数量: 5 个映射/变量
+    uint256[95] private _gap;
 }

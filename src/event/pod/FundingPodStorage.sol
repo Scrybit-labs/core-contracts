@@ -6,7 +6,7 @@ import "../../interfaces/event/IFundingPod.sol";
 /**
  * @title FundingPodStorage
  * @notice FundingPod 的存储层合约
- * @dev 存储与逻辑分离,便于合约升级
+ * @dev 存储与逻辑分离
  */
 abstract contract FundingPodStorage is IFundingPod {
     // ============ 常量 Constants ============

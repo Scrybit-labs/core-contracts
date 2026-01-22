@@ -22,18 +22,13 @@ interface IOracle {
     event ResultSubmitted(
         bytes32 indexed requestId,
         uint256 indexed eventId,
-        uint256 winningOutcomeId,
+        uint256 winningOutcomeIndex,
         address indexed oracle,
         uint256 timestamp
     );
 
     /// @notice 结果确认事件
-    event ResultConfirmed(
-        uint256 indexed eventId,
-        uint256 winningOutcomeId,
-        uint256 confirmations,
-        uint256 timestamp
-    );
+    event ResultConfirmed(uint256 indexed eventId, uint256 winningOutcomeIndex, uint256 confirmations, uint256 timestamp);
 
     // ============ 错误 Errors ============
 
@@ -53,24 +48,16 @@ interface IOracle {
      * @param eventDescription 事件描述
      * @return requestId 请求 ID
      */
-    function requestEventResult(
-        uint256 eventId,
-        string calldata eventDescription
-    ) external returns (bytes32 requestId);
+    function requestEventResult(uint256 eventId, string calldata eventDescription) external returns (bytes32 requestId);
 
     /**
      * @notice 提交事件结果
      * @param requestId 请求 ID
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 证明数据(签名、Merkle Proof 等)
      */
-    function submitResult(
-        bytes32 requestId,
-        uint256 eventId,
-        uint256 winningOutcomeId,
-        bytes calldata proof
-    ) external;
+    function submitResult(bytes32 requestId, uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) external;
 
     /**
      * @notice 取消请求
@@ -88,26 +75,17 @@ interface IOracle {
      * @return timestamp 请求时间戳
      * @return fulfilled 是否已完成
      */
-    function getRequest(bytes32 requestId)
-        external
-        view
-        returns (
-            uint256 eventId,
-            address requester,
-            uint256 timestamp,
-            bool fulfilled
-        );
+    function getRequest(
+        bytes32 requestId
+    ) external view returns (uint256 eventId, address requester, uint256 timestamp, bool fulfilled);
 
     /**
      * @notice 获取事件结果
      * @param eventId 事件 ID
-     * @return winningOutcomeId 获胜结果 ID
+     * @return winningOutcomeIndex 获胜结果索引 (0-based)
      * @return confirmed 是否已确认
      */
-    function getEventResult(uint256 eventId)
-        external
-        view
-        returns (uint256 winningOutcomeId, bool confirmed);
+    function getEventResult(uint256 eventId) external view returns (uint256 winningOutcomeIndex, bool confirmed);
 }
 
 /**
@@ -119,12 +97,8 @@ interface IOracleConsumer {
     /**
      * @notice 接收预言机结果
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 证明数据
      */
-    function fulfillResult(
-        uint256 eventId,
-        uint256 winningOutcomeId,
-        bytes calldata proof
-    ) external;
+    function fulfillResult(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) external;
 }

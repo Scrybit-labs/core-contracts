@@ -12,14 +12,21 @@ import "../../interfaces/event/IFeeVaultPod.sol";
 abstract contract FeeVaultManagerStorage is IFeeVaultManager {
     // ============ Pod 管理 Pod Management ============
 
-    /// @notice Pod 白名单映射
-    mapping(IFeeVaultPod => bool) public podIsWhitelisted;
+    /// @notice Vendor ID 到 FeeVaultPod 地址的映射
+    mapping(uint256 => address) public vendorToFeeVaultPod;
 
-    /// @notice 事件到 Pod 的映射
-    mapping(uint256 => IFeeVaultPod) public eventIdToPod;
+    /// @notice FeeVaultPod 部署状态
+    mapping(address => bool) internal feeVaultPodIsDeployed;
+
+    /// @notice PodDeployer 合约地址
+    address public podDeployer;
+
+    /// @notice PodFactory 合约地址
+    address public factory;
 
     // ============ 预留升级空间 Upgrade Reserve ============
 
     /// @notice 预留 storage slots
-    uint256[98] private __gap;
+    /// @dev 减去已使用的 slot 数量: 4 个映射/变量
+    uint256[96] private __gap;
 }

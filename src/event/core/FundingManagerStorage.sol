@@ -11,22 +11,19 @@ import "../../interfaces/event/IFundingManager.sol";
 abstract contract FundingManagerStorage is IFundingManager {
     // ============ 状态变量 State Variables ============
 
-    /// @notice Pod 白名单管理员(预留,当前由 owner 管理)
-    address public fundingPodWhitelister;
+    /// @notice Vendor ID 到 FundingPod 地址的映射
+    mapping(uint256 => address) public vendorToFundingPod;
 
-    /// @notice Pod 白名单映射
-    mapping(IFundingPod => bool) public podIsWhitelistedForDeposit;
+    /// @notice FundingPod 部署状态
+    mapping(address => bool) internal fundingPodIsDeployed;
 
-    /// @notice 白名单 Pod 数组(用于遍历)
-    IFundingPod[] public whitelistedPods;
+    /// @notice PodDeployer 合约地址
+    address public podDeployer;
 
-    /// @notice Pod 在数组中的索引(用于快速删除)
-    mapping(IFundingPod => uint256) internal podIndex;
-
-    /// @notice 紧急提现配置映射(预留)
-    mapping(IFundingPod => bool) public emergencyWithdrawEnabled;
+    /// @notice PodFactory 合约地址
+    address public factory;
 
     /// @notice 预留升级空间(OpenZeppelin 升级模式)
-    /// @dev 减去已使用的 slot 数量: 5 个映射/变量
-    uint256[45] private _gap;
+    /// @dev 减去已使用的 slot 数量: 4 个映射/变量
+    uint256[46] private _gap;
 }

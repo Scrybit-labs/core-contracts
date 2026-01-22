@@ -25,12 +25,6 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
 
     // ============ Modifiers ============
 
-    /// @notice 仅 FundingManager 可调用
-    modifier onlyFundingManager() {
-        require(msg.sender == address(fundingManager), "FundingPod: only fundingManager");
-        _;
-    }
-
     /// @notice 仅 OrderBookPod 可调用
     modifier onlyOrderBookPod() {
         require(msg.sender == orderBookPod, "FundingPod: only orderBookPod");
@@ -62,7 +56,6 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
     {
         __Ownable_init(initialOwner);
         __Pausable_init();
-
         require(_fundingManager != address(0), "FundingPod: invalid fundingManager");
 
         fundingManager = _fundingManager;
@@ -73,19 +66,26 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
     // ============ 基础功能 Basic Functions ============
 
     /**
-     * @notice 用户入金
-     * @param user 用户地址 (由 FundingManager 传入)
+     * @notice 用户入金 (Public - users can call directly)
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function deposit(address user, address tokenAddress, uint256 amount) external onlyFundingManager {
+    function deposit(address tokenAddress, uint256 amount) external payable whenNotPaused {
+        address user = msg.sender; // Direct caller
+
         if (!IsSupportToken[tokenAddress]) {
             revert TokenIsNotSupported(tokenAddress);
         }
         if (amount == 0) {
             revert LessThanZero(amount);
         }
-        require(user != address(0), "FundingPod: invalid user address");
+
+        // Handle token transfer
+        if (tokenAddress == ETHAddress) {
+            require(msg.value == amount, "FundingPod: ETH amount mismatch");
+        } else {
+            IERC20(tokenAddress).safeTransferFrom(user, address(this), amount);
+        }
 
         // 更新余额
         userTokenBalances[user][tokenAddress] += amount;
@@ -96,8 +96,7 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
     }
 
     /**
-     * @notice 用户提现
-     * @param user 用户地址 (由 FundingManager 传入)
+     * @notice 用户提现 (Public - users can call directly)
      * @param tokenAddress Token 地址
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
@@ -113,7 +112,6 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
         if (amount == 0) {
             revert LessThanZero(amount);
         }
-        require(user != address(0), "FundingPod: invalid user address");
 
         uint256 availableBalance = userTokenBalances[user][tokenAddress];
 
@@ -136,6 +134,7 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
 
         emit WithdrawToken(tokenAddress, user, withdrawAddress, amount);
     }
+
 
     /**
      * @notice 设置支持的 ERC20 Token

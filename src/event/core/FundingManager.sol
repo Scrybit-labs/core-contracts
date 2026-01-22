@@ -9,6 +9,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "./FundingManagerStorage.sol";
+import "../../interfaces/event/IPodFactory.sol";
+import "../../interfaces/event/IPodDeployer.sol";
 
 /**
  * @title FundingManager
@@ -26,18 +28,9 @@ contract FundingManager is
 
     // ============ Modifiers ============
 
-    /// @notice 仅白名单管理员可调用
-    modifier onlyFundingPodWhitelister() {
-        require(
-            msg.sender == fundingPodWhitelister || msg.sender == owner(),
-            "FundingManager: not the whitelister or owner"
-        );
-        _;
-    }
-
-    /// @notice 仅白名单 Pod 可调用
-    modifier onlyWhitelistedPod(IFundingPod pod) {
-        require(podIsWhitelistedForDeposit[pod], "FundingManager: pod not whitelisted");
+    /// @notice 仅 Factory 可调用
+    modifier onlyFactory() {
+        require(msg.sender == factory, "FundingManager: only factory");
         _;
     }
 
@@ -50,164 +43,140 @@ contract FundingManager is
     /**
      * @notice 初始化合约
      * @param _initialOwner 初始所有者地址
-     * @param _fundingPodWhitelister 白名单管理员地址
      */
-    function initialize(address _initialOwner, address _fundingPodWhitelister) external initializer {
+    function initialize(address _initialOwner) external initializer {
         __Ownable_init(_initialOwner);
         __Pausable_init();
-
-        fundingPodWhitelister = _fundingPodWhitelister;
     }
 
-    // ============ Pod 管理功能 ============
+    // ============ Pod 部署功能 Pod Deployment ============
 
     /**
-     * @notice 添加 Pod 到白名单
-     * @param fundingPodsToWhitelist Pod 地址列表
-     * @param thirdPartyTransfersForbiddenValues 是否禁止第三方转账(预留)
+     * @notice 部署 FundingPod (仅 Factory 可调用)
+     * @param vendorId Vendor ID
+     * @param vendorAddress Vendor 地址
+     * @param orderBookPod OrderBookPod 地址
+     * @param eventPod EventPod 地址
+     * @return fundingPod FundingPod 地址
      */
-    function addStrategiesToDepositWhitelist(
-        IFundingPod[] calldata fundingPodsToWhitelist,
-        bool[] calldata thirdPartyTransfersForbiddenValues
-    ) external onlyFundingPodWhitelister {
-        require(
-            fundingPodsToWhitelist.length == thirdPartyTransfersForbiddenValues.length,
-            "FundingManager: length mismatch"
+    function deployFundingPod(
+        uint256 vendorId,
+        address vendorAddress,
+        address orderBookPod,
+        address eventPod
+    ) external onlyFactory returns (address fundingPod) {
+        require(vendorId > 0, "FundingManager: invalid vendorId");
+        require(vendorToFundingPod[vendorId] == address(0), "FundingManager: pod already deployed");
+
+        // 调用 PodDeployer
+        fundingPod = IPodDeployer(podDeployer).deployFundingPod(
+            vendorId,
+            vendorAddress,
+            address(this),  // fundingManager
+            orderBookPod,
+            eventPod
         );
 
-        for (uint256 i = 0; i < fundingPodsToWhitelist.length; i++) {
-            IFundingPod pod = fundingPodsToWhitelist[i];
-            require(address(pod) != address(0), "FundingManager: invalid pod address");
-            require(!podIsWhitelistedForDeposit[pod], "FundingManager: pod already whitelisted");
+        // 记录部署
+        vendorToFundingPod[vendorId] = fundingPod;
+        fundingPodIsDeployed[fundingPod] = true;
 
-            podIsWhitelistedForDeposit[pod] = true;
+        emit FundingPodDeployed(vendorId, fundingPod);
 
-            // 添加到数组并记录索引
-            podIndex[pod] = whitelistedPods.length;
-            whitelistedPods.push(pod);
-
-            emit PodWhitelisted(address(pod));
-        }
+        return fundingPod;
     }
 
     /**
-     * @notice 从白名单移除 Pod
-     * @param fundingPodsToRemoveFromWhitelist Pod 地址列表
+     * @notice 获取 vendor 的 FundingPod 地址
+     * @param vendorId Vendor ID
+     * @return fundingPod FundingPod 地址
      */
-    function removeStrategiesFromDepositWhitelist(
-        IFundingPod[] calldata fundingPodsToRemoveFromWhitelist
-    ) external onlyFundingPodWhitelister {
-        for (uint256 i = 0; i < fundingPodsToRemoveFromWhitelist.length; i++) {
-            IFundingPod pod = fundingPodsToRemoveFromWhitelist[i];
-            require(podIsWhitelistedForDeposit[pod], "FundingManager: pod not whitelisted");
-
-            podIsWhitelistedForDeposit[pod] = false;
-
-            // 从数组中删除(swap-and-pop)
-            uint256 index = podIndex[pod];
-            uint256 lastIndex = whitelistedPods.length - 1;
-
-            if (index != lastIndex) {
-                IFundingPod lastPod = whitelistedPods[lastIndex];
-                whitelistedPods[index] = lastPod;
-                podIndex[lastPod] = index;
-            }
-
-            whitelistedPods.pop();
-            delete podIndex[pod];
-
-            emit PodRemovedFromWhitelist(address(pod));
-        }
+    function getVendorFundingPod(uint256 vendorId) external view returns (address) {
+        return vendorToFundingPod[vendorId];
     }
 
     /**
-     * @notice 检查 Pod 是否在白名单中
-     * @param fundingPod Pod 地址
-     * @return isWhitelisted 是否在白名单
+     * @notice 设置 PodDeployer 地址
+     * @param _podDeployer PodDeployer 合约地址
      */
-    function isPodWhitelisted(IFundingPod fundingPod) external view returns (bool) {
-        return podIsWhitelistedForDeposit[fundingPod];
+    function setPodDeployer(address _podDeployer) external onlyOwner {
+        require(_podDeployer != address(0), "FundingManager: invalid podDeployer");
+        podDeployer = _podDeployer;
     }
 
-    // ============ 入金功能 Deposit Functions ============
+    // ============ Vendor-Based 入金/提现功能 ============
 
     /**
-     * @notice ETH 入金到 Pod
-     * @param fundingPod 目标 Pod
+     * @notice ETH 入金到 Vendor 的 Pod
+     * @param vendorId Vendor ID
      * @return success 是否成功
      */
-    function depositEthIntoPod(
-        IFundingPod fundingPod
-    ) external payable whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant returns (bool) {
+    function depositEthIntoVendorPod(uint256 vendorId) external payable whenNotPaused nonReentrant returns (bool) {
         require(msg.value > 0, "FundingManager: deposit amount must be greater than 0");
+
+        // 从内部映射获取 vendor 的 FundingPod
+        address fundingPodAddress = vendorToFundingPod[vendorId];
+        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
+
+        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
 
         // 转账 ETH 到 Pod
         (bool sent, ) = address(fundingPod).call{value: msg.value}("");
         require(sent, "FundingManager: failed to send ETH");
 
-        // 调用 Pod 的 deposit 函数 (传入真实用户地址)
-        fundingPod.deposit(msg.sender, fundingPod.ETHAddress(), msg.value);
+        // 调用 Pod 的 deposit 函数 (pod will use msg.sender internally)
+        fundingPod.deposit(fundingPod.ETHAddress(), msg.value);
 
         return true;
     }
 
     /**
-     * @notice ERC20 Token 入金到 Pod
-     * @param fundingPod 目标 Pod
+     * @notice ERC20 Token 入金到 Vendor 的 Pod
+     * @param vendorId Vendor ID
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function depositErc20IntoPod(
-        IFundingPod fundingPod,
+    function depositErc20IntoVendorPod(
+        uint256 vendorId,
         IERC20 tokenAddress,
         uint256 amount
-    ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
+    ) external whenNotPaused nonReentrant {
         require(amount > 0, "FundingManager: deposit amount must be greater than 0");
+
+        // 从内部映射获取 vendor 的 FundingPod
+        address fundingPodAddress = vendorToFundingPod[vendorId];
+        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
+
+        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
 
         // 从用户转账到 Pod
         tokenAddress.safeTransferFrom(msg.sender, address(fundingPod), amount);
 
-        // 调用 Pod 的 deposit 函数 (传入真实用户地址)
-        fundingPod.deposit(msg.sender, address(tokenAddress), amount);
-    }
-
-    // ============ 提现功能 Withdraw Functions ============
-
-    /**
-     * @notice 从 Pod 提现
-     * @param fundingPod Pod 地址
-     * @param tokenAddress Token 地址
-     * @param amount 金额
-     */
-    function withdrawFromPod(
-        IFundingPod fundingPod,
-        address tokenAddress,
-        uint256 amount
-    ) external whenNotPaused onlyWhitelistedPod(fundingPod) nonReentrant {
-        require(amount > 0, "FundingManager: withdraw amount must be greater than 0");
-
-        // 调用 Pod 的 withdraw 函数 (传入真实用户地址)
-        fundingPod.withdraw(msg.sender, tokenAddress, payable(msg.sender), amount);
+        // 调用 Pod 的 deposit 函数 (pod will use msg.sender internally)
+        fundingPod.deposit(address(tokenAddress), amount);
     }
 
     /**
-     * @notice 紧急提现(管理员功能)
-     * @param fundingPod Pod 地址
+     * @notice 从 Vendor 的 Pod 提现
+     * @param vendorId Vendor ID
      * @param tokenAddress Token 地址
-     * @param recipient 接收地址
      * @param amount 金额
      */
-    function emergencyWithdraw(
-        IFundingPod fundingPod,
+    function withdrawFromVendorPod(
+        uint256 vendorId,
         address tokenAddress,
-        address recipient,
         uint256 amount
-    ) external onlyOwner nonReentrant {
-        require(recipient != address(0), "FundingManager: invalid recipient");
+    ) external whenNotPaused nonReentrant {
         require(amount > 0, "FundingManager: withdraw amount must be greater than 0");
 
-        // 调用 Pod 的 withdraw 函数 (管理员指定接收者和金额)
-        fundingPod.withdraw(recipient, tokenAddress, payable(recipient), amount);
+        // 从内部映射获取 vendor 的 FundingPod
+        address fundingPodAddress = vendorToFundingPod[vendorId];
+        require(fundingPodAddress != address(0), "FundingManager: vendor not found");
+
+        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
+
+        // 调用 Pod 的 withdraw 函数 (pod will use msg.sender internally for user auth)
+        fundingPod.withdraw(tokenAddress, payable(msg.sender), amount);
     }
 
     // ============ 虚拟 Long Token 管理 Virtual Long Token Management ============
@@ -253,8 +222,8 @@ contract FundingManager is
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 获取 Pod 总余额
-     * @param fundingPod Pod 地址
+     * @notice 获取 Vendor Pod 的总余额
+     * @param vendorId Vendor ID
      * @param tokenAddress Token 地址
      * @return balance 总余额
      */
@@ -322,25 +291,19 @@ contract FundingManager is
         return whitelistedPods.length;
     }
 
-    /**
-     * @notice 获取指定索引的白名单 Pod
-     * @param index Pod 索引
-     * @return pod Pod 地址
-     */
-    function getWhitelistedPodAt(uint256 index) external view returns (IFundingPod) {
-        require(index < whitelistedPods.length, "FundingManager: index out of bounds");
-        return whitelistedPods[index];
+        IFundingPod fundingPod = IFundingPod(fundingPodAddress);
+        return fundingPod.tokenBalances(tokenAddress);
     }
 
     // ============ 管理功能 Admin Functions ============
 
     /**
-     * @notice 更新白名单管理员
-     * @param _fundingPodWhitelister 新管理员地址
+     * @notice 设置 PodFactory 地址
+     * @param _factory PodFactory 合约地址
      */
-    function setFundingPodWhitelister(address _fundingPodWhitelister) external onlyOwner {
-        require(_fundingPodWhitelister != address(0), "FundingManager: invalid address");
-        fundingPodWhitelister = _fundingPodWhitelister;
+    function setFactory(address _factory) external onlyOwner {
+        require(_factory != address(0), "FundingManager: invalid factory");
+        factory = _factory;
     }
 
     // ============ 紧急控制 Emergency Control ============

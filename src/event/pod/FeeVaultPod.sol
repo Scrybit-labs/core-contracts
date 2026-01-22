@@ -17,13 +17,7 @@ import "../../interfaces/admin/IAdminFeeVault.sol";
  * @notice 手续费金库 Pod - 负责手续费收取、存储和分配
  * @dev 每个 FeeVaultPod 独立管理一组事件的手续费
  */
-contract FeeVaultPod is
-    Initializable,
-    OwnableUpgradeable,
-    PausableUpgradeable,
-    ReentrancyGuard,
-    FeeVaultPodStorage
-{
+contract FeeVaultPod is Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, FeeVaultPodStorage {
     using SafeERC20 for IERC20;
 
     // ============ Modifiers ============
@@ -61,7 +55,6 @@ contract FeeVaultPod is
     ) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-
         require(_feeVaultManager != address(0), "FeeVaultPod: invalid feeVaultManager");
         require(_feeRecipient != address(0), "FeeVaultPod: invalid feeRecipient");
 
@@ -112,11 +105,7 @@ contract FeeVaultPod is
      * @param recipient 接收者地址
      * @param amount 提取金额
      */
-    function withdrawFee(
-        address token,
-        address recipient,
-        uint256 amount
-    ) external onlyOwner nonReentrant {
+    function withdrawFee(address token, address recipient, uint256 amount) external onlyOwner nonReentrant {
         if (recipient == address(0)) revert InvalidRecipient(recipient);
         if (amount == 0) revert InvalidAmount(amount);
 
@@ -295,10 +284,7 @@ contract FeeVaultPod is
      * @param feeType 手续费类型
      * @return fee 手续费金额
      */
-    function calculateFee(
-        uint256 amount,
-        string calldata feeType
-    ) external view returns (uint256 fee) {
+    function calculateFee(uint256 amount, string calldata feeType) external view returns (uint256 fee) {
         bytes32 key = keccak256(bytes(feeType));
         uint256 rate = feeRates[key];
 
