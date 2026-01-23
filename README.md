@@ -26,7 +26,7 @@
 
 ## 3.系统架构
 
-[![Architecture](./assets/architecture.png)](https://github.com/roothash-pay/event-contracts)
+[![Architecture](./assets/architecture.png)]
 
 ### 3.1.智能合约架构
 
