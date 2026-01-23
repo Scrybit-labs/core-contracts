@@ -226,7 +226,11 @@ if (currentBalance >= transferThreshold[token]) {
 - `getVendorEventPod()` → 查询 vendor 的 EventPod 地址
 - `registerOracle()` / `removeOracle()` → 预言机授权
 
+<<<<<<< HEAD
 ---
+=======
+[![Architecture](./assets/architecture.png)]
+>>>>>>> f11b957c12a4e94a6979a346cc5088c02356e143
 
 #### OrderBookManager (`src/orderbook/core/OrderBookManager.sol`)
 **职责**：OrderBookPod 部署与授权管理
