@@ -113,13 +113,13 @@ contract OracleAdapter is
      * @notice 提交事件结果
      * @param requestId 请求 ID
      * @param eventId 事件 ID
-     * @param winningOutcomeIndex 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引
      * @param proof 证明数据
      */
     function submitResult(
         bytes32 requestId,
         uint256 eventId,
-        uint256 winningOutcomeIndex,
+        uint8 winningOutcomeIndex,
         bytes calldata proof
     ) external whenNotPaused onlyAuthorizedOracle nonReentrant {
         OracleRequest storage request = requests[requestId];
@@ -128,7 +128,6 @@ contract OracleAdapter is
         if (request.requestId == bytes32(0)) revert RequestNotFound(requestId);
         if (request.eventId != eventId) revert InvalidEventId(eventId);
         if (request.fulfilled) revert ResultAlreadySubmitted(requestId);
-        if (winningOutcomeIndex == 0) revert InvalidOutcomeId(winningOutcomeIndex);
 
         // 检查超时
         if (block.timestamp > request.timestamp + requestTimeout) {
@@ -181,10 +180,10 @@ contract OracleAdapter is
     /**
      * @notice 内部函数: 验证证明
      * @param requestId 请求 ID
-     * @param winningOutcomeIndex 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引
      * @param proof 证明数据
      */
-    function _verifyProof(bytes32 requestId, uint256 winningOutcomeIndex, bytes calldata proof) internal view {
+    function _verifyProof(bytes32 requestId, uint8 winningOutcomeIndex, bytes calldata proof) internal view {
         // 这里可以实现签名验证、Merkle Proof 验证等
         // 示例: 验证签名
         // (bytes32 r, bytes32 s, uint8 v) = abi.decode(proof, (bytes32, bytes32, uint8));
@@ -202,10 +201,10 @@ contract OracleAdapter is
     /**
      * @notice 内部函数: 回调 OracleConsumer
      * @param eventId 事件 ID
-     * @param winningOutcomeIndex 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引
      * @param proof 证明数据
      */
-    function _fulfillConsumer(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) internal {
+    function _fulfillConsumer(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) internal {
         if (oracleConsumer == address(0)) return;
 
         try IOracleConsumer(oracleConsumer).fulfillResult(eventId, winningOutcomeIndex, proof) {} catch {
@@ -234,10 +233,10 @@ contract OracleAdapter is
     /**
      * @notice 获取事件结果
      * @param eventId 事件 ID
-     * @return winningOutcomeIndex 获胜结果 ID
+     * @return winningOutcomeIndex 获胜结果索引
      * @return confirmed 是否已确认
      */
-    function getEventResult(uint256 eventId) external view returns (uint256 winningOutcomeIndex, bool confirmed) {
+    function getEventResult(uint256 eventId) external view returns (uint8 winningOutcomeIndex, bool confirmed) {
         return (eventResults[eventId], eventResultConfirmed[eventId]);
     }
 

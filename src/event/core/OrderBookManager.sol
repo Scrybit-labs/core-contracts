@@ -6,7 +6,6 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "./OrderBookManagerStorage.sol";
-import "../../interfaces/event/IOrderBookPod.sol";
 import "../../interfaces/event/IPodDeployer.sol";
 
 /**
@@ -100,56 +99,6 @@ contract OrderBookManager is Initializable, OwnableUpgradeable, PausableUpgradea
     function setPodDeployer(address _podDeployer) external onlyOwner {
         require(_podDeployer != address(0), "OrderBookManager: invalid podDeployer");
         podDeployer = _podDeployer;
-    }
-
-    // ============ 订单管理功能 ============
-
-    /**
-     * @notice 下单
-     * @param vendorId Vendor ID
-     * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
-     * @param side 订单方向(买/卖)
-     * @param price 价格
-     * @param amount 数量
-     * @param tokenAddress Token 地址
-     * @return orderId 订单 ID
-     */
-    function placeOrder(
-        uint256 vendorId,
-        uint256 eventId,
-        uint256 outcomeId,
-        IOrderBookPod.OrderSide side,
-        uint256 price,
-        uint256 amount,
-        address tokenAddress
-    ) external whenNotPaused returns (uint256 orderId) {
-        address podAddress = vendorToOrderBookPod[vendorId];
-        require(podAddress != address(0), "OrderBookManager: vendor not found");
-
-        IOrderBookPod pod = IOrderBookPod(podAddress);
-        orderId = pod.placeOrder(
-            eventId,
-            outcomeId,
-            side,
-            price,
-            amount,
-            tokenAddress
-        );
-    }
-
-    /**
-     * @notice 撤单
-     * @param vendorId Vendor ID
-     * @param eventId 事件 ID
-     * @param orderId 订单 ID
-     */
-    function cancelOrder(uint256 vendorId, uint256 eventId, uint256 orderId) external whenNotPaused {
-        address podAddress = vendorToOrderBookPod[vendorId];
-        require(podAddress != address(0), "OrderBookManager: vendor not found");
-
-        IOrderBookPod pod = IOrderBookPod(podAddress);
-        pod.cancelOrder(orderId);
     }
 
     // ============ 查询功能 View Functions ============

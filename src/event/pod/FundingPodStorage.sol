@@ -41,17 +41,17 @@ abstract contract FundingPodStorage is IFundingPod {
 
     // ============ 虚拟 Long Token 持仓 Virtual Long Token Positions ============
 
-    /// @notice 用户虚拟 Long Token 持仓: user => token => eventId => outcomeId => longBalance
+    /// @notice 用户虚拟 Long Token 持仓: user => token => eventId => outcomeIndex => longBalance
     /// @dev 代表用户持有的某个结果的 Long token 数量
-    mapping(address => mapping(address => mapping(uint256 => mapping(uint256 => uint256)))) public longPositions;
+    mapping(address => mapping(address => mapping(uint256 => mapping(uint8 => uint256)))) public longPositions;
 
     /// @notice 订单锁定的 USDT: orderId => lockedUSDT
     /// @dev 买单锁定 USDT,撮合时释放
     mapping(uint256 => uint256) public orderLockedUSDT;
 
-    /// @notice 订单锁定的 Long Token: orderId => eventId => outcomeId => lockedLong
+    /// @notice 订单锁定的 Long Token: orderId => eventId => outcomeIndex => lockedLong
     /// @dev 卖单锁定 Long token,撮合时释放
-    mapping(uint256 => mapping(uint256 => mapping(uint256 => uint256))) public orderLockedLong;
+    mapping(uint256 => mapping(uint256 => mapping(uint8 => uint256))) public orderLockedLong;
 
     // ============ 事件奖金池管理 Event Prize Pool ============
 
@@ -61,8 +61,8 @@ abstract contract FundingPodStorage is IFundingPod {
     /// @notice 事件结算状态: eventId => settled
     mapping(uint256 => bool) public eventSettled;
 
-    /// @notice 事件获胜结果: eventId => winningOutcomeId
-    mapping(uint256 => uint256) public eventWinningOutcome;
+    /// @notice 事件获胜结果: eventId => winningOutcomeIndex
+    mapping(uint256 => uint8) public eventWinningOutcome;
 
     // ============ 统计信息 Statistics ============
 
@@ -74,9 +74,9 @@ abstract contract FundingPodStorage is IFundingPod {
 
     // ============ 事件结果信息 Event Outcome Info ============
 
-    /// @notice 事件的所有结果 ID: eventId => outcomeIds[]
+    /// @notice 事件的所有结果索引: eventId => outcomeIndices[]
     /// @dev 用于铸造完整集合时遍历所有结果
-    mapping(uint256 => uint256[]) public eventOutcomes;
+    mapping(uint256 => uint8[]) public eventOutcomes;
 
     /// @notice 预留升级空间(OpenZeppelin 升级模式)
     /// @dev 减去已使用的 slot 数量: 约 17 个映射/变量

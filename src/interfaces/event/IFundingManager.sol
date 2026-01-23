@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-import "./IFundingPod.sol";
-
 /**
  * @title IFundingManager
  * @notice 资金管理器接口 - 负责资金池管理和 Pod 路由
@@ -45,31 +41,6 @@ interface IFundingManager {
      * @param _podDeployer PodDeployer 合约地址
      */
     function setPodDeployer(address _podDeployer) external;
-
-    // ============ 入金功能 Deposit Functions ============
-
-    /**
-     * @notice ETH 入金到 Vendor 的 Pod
-     * @param vendorId Vendor ID
-     * @return success 是否成功
-     */
-    function depositEthIntoVendorPod(uint256 vendorId) external payable returns (bool);
-
-    /**
-     * @notice ERC20 Token 入金到 Vendor 的 Pod
-     * @param vendorId Vendor ID
-     * @param tokenAddress Token 地址
-     * @param amount 金额
-     */
-    function depositErc20IntoVendorPod(uint256 vendorId, IERC20 tokenAddress, uint256 amount) external;
-
-    /**
-     * @notice 从 Vendor 的 Pod 提现
-     * @param vendorId Vendor ID
-     * @param tokenAddress Token 地址
-     * @param amount 金额
-     */
-    function withdrawFromVendorPod(uint256 vendorId, address tokenAddress, uint256 amount) external;
 
     // ============ 查询功能 View Functions ============
 

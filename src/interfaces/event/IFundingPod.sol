@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 /**
  * @title IFundingPod
  * @notice 资金 Pod 接口 - 负责资金管理、锁定和结算
@@ -25,12 +27,12 @@ interface IFundingPod {
 
     /// @notice 资金锁定事件
     event FundsLocked(
-        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint256 outcomeId
+        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint8 outcomeIndex
     );
 
     /// @notice 资金解锁事件
     event FundsUnlocked(
-        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint256 outcomeId
+        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint8 outcomeIndex
     );
 
     /// @notice 订单结算事件
@@ -39,7 +41,7 @@ interface IFundingPod {
     /// @notice 事件结算事件
     event EventSettled(
         uint256 indexed eventId,
-        uint256 winningOutcomeId,
+        uint8 winningOutcomeIndex,
         address indexed token,
         uint256 prizePool,
         uint256 winnersCount
@@ -56,7 +58,7 @@ interface IFundingPod {
         address indexed from,
         address indexed to,
         uint256 indexed eventId,
-        uint256 outcomeId,
+        uint8 outcomeIndex,
         address token,
         uint256 amount
     );
@@ -66,10 +68,10 @@ interface IFundingPod {
     error LessThanZero(uint256 amount);
     error TokenIsNotSupported(address ERC20Address);
     error InsufficientBalance(address user, address token, uint256 required, uint256 available);
-    error InsufficientLockedBalance(address user, address token, uint256 eventId, uint256 outcomeId);
+    error InsufficientLockedBalance(address user, address token, uint256 eventId, uint8 outcomeIndex);
     error EventAlreadySettled(uint256 eventId);
-    error InvalidWinningOutcome(uint256 eventId, uint256 outcomeId);
-    error InsufficientLongPosition(address user, address token, uint256 eventId, uint256 outcomeId);
+    error InvalidWinningOutcome(uint256 eventId, uint8 outcomeIndex);
+    error InsufficientLongPosition(address user, address token, uint256 eventId, uint8 outcomeIndex);
     error EventNotRegistered(uint256 eventId);
 
     // ============ 基础功能 Basic Functions ============
@@ -82,13 +84,32 @@ interface IFundingPod {
     function deposit(address tokenAddress, uint256 amount) external payable;
 
     /**
-     * @notice 用户提现 (Public - users can call directly)
+     * @notice 资金管理提现 (由 FundingManager 调用)
      * @param user 用户地址
      * @param tokenAddress Token 地址
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
     function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount) external;
+
+    /**
+     * @notice 用户直接 ETH 入金
+     */
+    function depositEth() external payable;
+
+    /**
+     * @notice 用户直接 ERC20 入金
+     * @param tokenAddress Token 地址
+     * @param amount 金额
+     */
+    function depositErc20(IERC20 tokenAddress, uint256 amount) external;
+
+    /**
+     * @notice 用户直接提现
+     * @param tokenAddress Token 地址
+     * @param amount 金额
+     */
+    function withdrawDirect(address tokenAddress, uint256 amount) external;
 
     /**
      * @notice 设置支持的 ERC20 Token
@@ -104,7 +125,7 @@ interface IFundingPod {
      * @param eventId 事件 ID
      * @param outcomeCount 结果数量
      */
-    function registerEvent(uint256 eventId, uint256 outcomeCount) external;
+    function registerEvent(uint256 eventId, uint8 outcomeCount) external;
 
     /**
      * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long)
@@ -125,6 +146,22 @@ interface IFundingPod {
     function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount) external;
 
     /**
+     * @notice 用户直接铸造完整集合
+     * @param eventId 事件 ID
+     * @param token Token 地址
+     * @param amount 铸造数量
+     */
+    function mintCompleteSetDirect(uint256 eventId, address token, uint256 amount) external;
+
+    /**
+     * @notice 用户直接销毁完整集合
+     * @param eventId 事件 ID
+     * @param token Token 地址
+     * @param amount 销毁数量
+     */
+    function burnCompleteSetDirect(uint256 eventId, address token, uint256 amount) external;
+
+    /**
      * @notice 下单时锁定资金或 Long Token
      * @param user 用户地址
      * @param orderId 订单 ID
@@ -132,7 +169,7 @@ interface IFundingPod {
      * @param isBuyOrder 是否为买单
      * @param amount 锁定数量 (买单锁 USDT,卖单锁 Long)
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      */
     function lockForOrder(
         address user,
@@ -141,7 +178,7 @@ interface IFundingPod {
         bool isBuyOrder,
         uint256 amount,
         uint256 eventId,
-        uint256 outcomeId
+        uint8 outcomeIndex
     ) external;
 
     /**
@@ -151,7 +188,7 @@ interface IFundingPod {
      * @param token Token 地址
      * @param isBuyOrder 是否为买单
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      */
     function unlockForOrder(
         address user,
@@ -159,7 +196,7 @@ interface IFundingPod {
         address token,
         bool isBuyOrder,
         uint256 eventId,
-        uint256 outcomeId
+        uint8 outcomeIndex
     ) external;
 
     /**
@@ -172,7 +209,7 @@ interface IFundingPod {
      * @param matchAmount 成交数量
      * @param matchPrice 成交价格 (basis points, 1-10000)
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      */
     function settleMatchedOrder(
         uint256 buyOrderId,
@@ -183,20 +220,20 @@ interface IFundingPod {
         uint256 matchAmount,
         uint256 matchPrice,
         uint256 eventId,
-        uint256 outcomeId
+        uint8 outcomeIndex
     ) external;
 
     /**
      * @notice 事件结算时分配奖金
      * @param eventId 事件 ID
-     * @param winningOutcomeId 获胜结果 ID
+     * @param winningOutcomeIndex 获胜结果索引
      * @param token Token 地址
      * @param winners 获胜者地址列表
      * @param positions 获胜者持仓列表
      */
     function settleEvent(
         uint256 eventId,
-        uint256 winningOutcomeId,
+        uint8 winningOutcomeIndex,
         address token,
         address[] calldata winners,
         uint256[] calldata positions
@@ -224,10 +261,10 @@ interface IFundingPod {
      * @param user 用户地址
      * @param token Token 地址
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      * @return position Long Token 数量
      */
-    function getLongPosition(address user, address token, uint256 eventId, uint256 outcomeId)
+    function getLongPosition(address user, address token, uint256 eventId, uint8 outcomeIndex)
         external
         view
         returns (uint256);
@@ -243,10 +280,14 @@ interface IFundingPod {
      * @notice 获取订单锁定的 Long Token
      * @param orderId 订单 ID
      * @param eventId 事件 ID
-     * @param outcomeId 结果 ID
+     * @param outcomeIndex 结果索引
      * @return locked 锁定的 Long Token 数量
      */
-    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint256 outcomeId) external view returns (uint256);
+    function getOrderLockedLong(
+        uint256 orderId,
+        uint256 eventId,
+        uint8 outcomeIndex
+    ) external view returns (uint256);
 
     /**
      * @notice 获取事件奖金池

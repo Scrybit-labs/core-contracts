@@ -93,55 +93,6 @@ contract FeeVaultManager is Initializable, OwnableUpgradeable, PausableUpgradeab
         podDeployer = _podDeployer;
     }
 
-    // ============ 手续费管理功能 ============
-
-    /**
-     * @notice 收取手续费
-     * @param vendorId Vendor ID
-     * @param eventId 事件 ID
-     * @param token Token 地址
-     * @param payer 支付者地址
-     * @param amount 手续费金额
-     * @param feeType 手续费类型
-     */
-    function collectFee(
-        uint256 vendorId,
-        uint256 eventId,
-        address token,
-        address payer,
-        uint256 amount,
-        string calldata feeType
-    ) external whenNotPaused {
-        address feeVaultPodAddress = vendorToFeeVaultPod[vendorId];
-        require(feeVaultPodAddress != address(0), "FeeVaultManager: vendor not found");
-
-        IFeeVaultPod pod = IFeeVaultPod(feeVaultPodAddress);
-        pod.collectFee(token, payer, amount, eventId, feeType);
-    }
-
-    /**
-     * @notice 提取手续费
-     * @param vendorId Vendor ID
-     * @param token Token 地址
-     * @param recipient 接收者地址
-     * @param amount 提取金额
-     */
-    function withdrawFee(
-        uint256 vendorId,
-        address token,
-        address recipient,
-        uint256 amount
-    ) external onlyOwner {
-        require(recipient != address(0), "FeeVaultManager: invalid recipient");
-        require(amount > 0, "FeeVaultManager: invalid amount");
-
-        address feeVaultPodAddress = vendorToFeeVaultPod[vendorId];
-        require(feeVaultPodAddress != address(0), "FeeVaultManager: vendor not found");
-
-        IFeeVaultPod pod = IFeeVaultPod(feeVaultPodAddress);
-        pod.withdrawFee(token, recipient, amount);
-    }
-
     // ============ 查询功能 View Functions ============
 
     /**

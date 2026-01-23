@@ -22,18 +22,18 @@ interface IOracle {
     event ResultSubmitted(
         bytes32 indexed requestId,
         uint256 indexed eventId,
-        uint256 winningOutcomeIndex,
+        uint8 winningOutcomeIndex,
         address indexed oracle,
         uint256 timestamp
     );
 
     /// @notice 结果确认事件
-    event ResultConfirmed(uint256 indexed eventId, uint256 winningOutcomeIndex, uint256 confirmations, uint256 timestamp);
+    event ResultConfirmed(uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 confirmations, uint256 timestamp);
 
     // ============ 错误 Errors ============
 
     error InvalidEventId(uint256 eventId);
-    error InvalidOutcomeId(uint256 outcomeId);
+    error InvalidOutcomeIndex(uint8 outcomeIndex);
     error RequestNotFound(bytes32 requestId);
     error ResultAlreadySubmitted(bytes32 requestId);
     error UnauthorizedOracle(address oracle);
@@ -57,7 +57,7 @@ interface IOracle {
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 证明数据(签名、Merkle Proof 等)
      */
-    function submitResult(bytes32 requestId, uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) external;
+    function submitResult(bytes32 requestId, uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) external;
 
     /**
      * @notice 取消请求
@@ -85,7 +85,7 @@ interface IOracle {
      * @return winningOutcomeIndex 获胜结果索引 (0-based)
      * @return confirmed 是否已确认
      */
-    function getEventResult(uint256 eventId) external view returns (uint256 winningOutcomeIndex, bool confirmed);
+    function getEventResult(uint256 eventId) external view returns (uint8 winningOutcomeIndex, bool confirmed);
 }
 
 /**
@@ -100,5 +100,5 @@ interface IOracleConsumer {
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 证明数据
      */
-    function fulfillResult(uint256 eventId, uint256 winningOutcomeIndex, bytes calldata proof) external;
+    function fulfillResult(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) external;
 }
