@@ -47,6 +47,27 @@ anvil :; anvil -m 'test test test test test test test test test test test junk' 
 NETWORK_ARGS := --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast
 NETWORK_SEPOLIA:= --rpc-url $(SEPOLIA_RPC_URL) --account devWallet --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
 NETWORK_ROOTHASH:= --rpc-url $(ROOTHASH_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast   -vvvv
+
+# ============ L2 部署配置 (推荐用于生产环境) ============
+# Arbitrum One (主网)
+NETWORK_ARBITRUM:= --rpc-url $(ARBITRUM_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(ARBISCAN_API_KEY) --verifier-url https://api.arbiscan.io/api -vvvv
+
+# Arbitrum Sepolia (测试网)
+NETWORK_ARBITRUM_SEPOLIA:= --rpc-url $(ARBITRUM_SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(ARBISCAN_API_KEY) --verifier-url https://api-sepolia.arbiscan.io/api -vvvv
+
+# Base (主网) - Gas 最低，推荐！
+NETWORK_BASE:= --rpc-url $(BASE_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(BASESCAN_API_KEY) --verifier-url https://api.basescan.org/api -vvvv
+
+# Base Sepolia (测试网)
+NETWORK_BASE_SEPOLIA:= --rpc-url $(BASE_SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(BASESCAN_API_KEY) --verifier-url https://api-sepolia.basescan.org/api -vvvv
+
+# Optimism (主网)
+NETWORK_OPTIMISM:= --rpc-url $(OPTIMISM_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(OPTIMISTIC_ETHERSCAN_API_KEY) --verifier-url https://api-optimistic.etherscan.io/api -vvvv
+
+# Optimism Sepolia (测试网)
+NETWORK_OPTIMISM_SEPOLIA:= --rpc-url $(OPTIMISM_SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(OPTIMISTIC_ETHERSCAN_API_KEY) --verifier-url https://api-sepolia-optimistic.etherscan.io/api -vvvv
+
+# ============ 部署命令 ============
 deploy-sepolia:
 	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_SEPOLIA)
 
@@ -55,3 +76,22 @@ deploy-local:
 
 deploy-roothash:
 	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_ROOTHASH)
+
+# ============ L2 部署命令 (推荐) ============
+deploy-arbitrum:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_ARBITRUM)
+
+deploy-arbitrum-sepolia:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_ARBITRUM_SEPOLIA)
+
+deploy-base:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_BASE)
+
+deploy-base-sepolia:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_BASE_SEPOLIA)
+
+deploy-optimism:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_OPTIMISM)
+
+deploy-optimism-sepolia:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_OPTIMISM_SEPOLIA)
