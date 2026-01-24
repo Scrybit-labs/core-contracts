@@ -78,7 +78,4 @@ abstract contract FundingPodStorage is IFundingPod {
     /// @dev 用于铸造完整集合时遍历所有结果
     mapping(uint256 => uint8[]) public eventOutcomes;
 
-    /// @notice 预留升级空间(OpenZeppelin 升级模式)
-    /// @dev 减去已使用的 slot 数量: 约 17 个映射/变量
-    uint256[83] private _gap;
 }

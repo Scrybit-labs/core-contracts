@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-
+import "./PodBase.sol";
 import "./OrderBookPodStorage.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
 import "../../interfaces/event/IFundingPod.sol";
@@ -15,7 +12,7 @@ import "../../interfaces/event/IFeeVaultPod.sol";
  * @notice 订单簿 Pod - 负责订单撮合和持仓管理
  * @dev 集成 FundingPod 进行资金管理
  */
-contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable, OrderBookPodStorage {
+contract OrderBookPod is PodBase, OrderBookPodStorage {
     // ============ Modifiers ============
 
     modifier onlyEventPod() {
@@ -36,12 +33,13 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
         address _feeVaultPod,
         address _orderBookManager
     ) public initializer {
-        __Ownable_init(initialOwner);
-        __Pausable_init();
+        _initializeOwner(initialOwner);
+        _initializePausable();
         eventPod = _eventPod;
         fundingPod = _fundingPod;
         feeVaultPod = _feeVaultPod;
         orderBookManager = _orderBookManager;
+        nextOrderId = 1; // Start from 1
     }
 
     // ============ 外部函数 External Functions ============
@@ -148,11 +146,11 @@ contract OrderBookPod is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function cancelOrder(uint256 orderId) external {
         Order storage order = orders[orderId];
 
-        if (order.status != OrderStatus.Pending && order.status != OrderStatus.Partial) {
-            revert CannotCancelOrder(orderId);
-        }
         if (eventSettled[order.eventId]) {
             revert EventAlreadySettled(order.eventId);
+        }
+        if (order.status != OrderStatus.Pending && order.status != OrderStatus.Partial) {
+            revert CannotCancelOrder(orderId);
         }
 
         _removeFromOrderBook(orderId);

@@ -68,8 +68,4 @@ abstract contract FeeVaultPodStorage is IFeeVaultPod {
     /// @notice 最大费率(10%)
     uint256 public constant MAX_FEE_RATE = 1000;
 
-    // ============ 预留升级空间 Upgrade Reserve ============
-
-    /// @notice 预留 storage slots (减少 2 个用于新增变量)
-    uint256[38] private __gap;
 }

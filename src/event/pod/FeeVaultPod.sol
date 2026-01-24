@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "./PodBase.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -17,7 +15,7 @@ import "../../interfaces/admin/IAdminFeeVault.sol";
  * @notice 手续费金库 Pod - 负责手续费收取、存储和分配
  * @dev 每个 FeeVaultPod 独立管理一组事件的手续费
  */
-contract FeeVaultPod is Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, FeeVaultPodStorage {
+contract FeeVaultPod is PodBase, ReentrancyGuard, FeeVaultPodStorage {
     using SafeERC20 for IERC20;
 
     // ============ Modifiers ============
@@ -53,8 +51,8 @@ contract FeeVaultPod is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         address _orderBookPod,
         address _feeRecipient
     ) external initializer {
-        __Ownable_init(initialOwner);
-        __Pausable_init();
+        _initializeOwner(initialOwner);
+        _initializePausable();
         require(_feeVaultManager != address(0), "FeeVaultPod: invalid feeVaultManager");
         require(_feeRecipient != address(0), "FeeVaultPod: invalid feeRecipient");
 

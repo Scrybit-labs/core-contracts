@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
+import "./PodBase.sol";
 import "./EventPodStorage.sol";
 import "../../interfaces/event/IEventPod.sol";
 import "../../interfaces/event/IOrderBookManager.sol";
@@ -15,7 +13,7 @@ import "../../interfaces/oracle/IOracle.sol";
  * @notice 事件 Pod - 负责独立处理一组事件的执行单元
  * @dev 每个 EventPod 独立管理一组事件,实现事件隔离和横向扩展
  */
-contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracleConsumer {
+contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
     // ============ Modifiers ============
 
     /// @notice 仅 Vendor 可调用
@@ -55,7 +53,7 @@ contract EventPod is Initializable, OwnableUpgradeable, EventPodStorage, IOracle
         address _eventManager,
         address _orderBookManager
     ) external initializer {
-        __Ownable_init(initialOwner);
+        _initializeOwner(initialOwner);
         require(_eventManager != address(0), "EventPod: invalid eventManager");
         require(_orderBookManager != address(0), "EventPod: invalid orderBookManager");
         require(_vendorId > 0, "EventPod: invalid vendorId");

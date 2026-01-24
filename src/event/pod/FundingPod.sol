@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "./PodBase.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -15,7 +13,7 @@ import {FundingPodStorage} from "./FundingPodStorage.sol";
  * @notice 资金 Pod - 负责资金管理、锁定和结算
  * @dev 每个 FundingPod 独立管理一组事件的资金
  */
-contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, FundingPodStorage {
+contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
     using SafeERC20 for IERC20;
 
     // ============ 常量 Constants ============
@@ -60,8 +58,8 @@ contract FundingPod is Initializable, OwnableUpgradeable, PausableUpgradeable, R
         external
         initializer
     {
-        __Ownable_init(initialOwner);
-        __Pausable_init();
+        _initializeOwner(initialOwner);
+        _initializePausable();
         require(_fundingManager != address(0), "FundingPod: invalid fundingManager");
 
         fundingManager = _fundingManager;
