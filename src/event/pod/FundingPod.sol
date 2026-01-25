@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "./PodBase.sol";
@@ -54,10 +54,12 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param _orderBookPod OrderBookPod 合约地址
      * @param _eventPod EventPod 合约地址
      */
-    function initialize(address initialOwner, address _fundingManager, address _orderBookPod, address _eventPod)
-        external
-        initializer
-    {
+    function initialize(
+        address initialOwner,
+        address _fundingManager,
+        address _orderBookPod,
+        address _eventPod
+    ) external initializer {
         _initializeOwner(initialOwner);
         _initializePausable();
         require(_fundingManager != address(0), "FundingPod: invalid fundingManager");
@@ -123,11 +125,12 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param withdrawAddress 提现目标地址
      * @param amount 金额
      */
-    function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount)
-        external
-        onlyFundingManager
-        nonReentrant
-    {
+    function withdraw(
+        address user,
+        address tokenAddress,
+        address payable withdrawAddress,
+        uint256 amount
+    ) external onlyFundingManager nonReentrant {
         _withdraw(user, tokenAddress, withdrawAddress, amount);
     }
 
@@ -161,7 +164,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
 
         // 转账
         if (tokenAddress == ETHAddress) {
-            (bool sent,) = withdrawAddress.call{value: amount}("");
+            (bool sent, ) = withdrawAddress.call{value: amount}("");
             require(sent, "FundingPod: failed to send ETH");
         } else {
             IERC20(tokenAddress).safeTransfer(withdrawAddress, amount);
@@ -516,11 +519,12 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param outcomeIndex 结果索引
      * @return position Long Token 数量
      */
-    function getLongPosition(address user, address token, uint256 eventId, uint8 outcomeIndex)
-        external
-        view
-        returns (uint256)
-    {
+    function getLongPosition(
+        address user,
+        address token,
+        uint256 eventId,
+        uint8 outcomeIndex
+    ) external view returns (uint256) {
         return longPositions[user][token][eventId][outcomeIndex];
     }
 
@@ -540,11 +544,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param outcomeIndex 结果索引
      * @return locked 锁定的 Long Token 数量
      */
-    function getOrderLockedLong(
-        uint256 orderId,
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256) {
+    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint8 outcomeIndex) external view returns (uint256) {
         return orderLockedLong[orderId][eventId][outcomeIndex];
     }
 
