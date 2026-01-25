@@ -29,6 +29,7 @@
 ### Status: 100% Complete
 
 **Infrastructure Files:**
+
 - ✅ `test/base/BaseTest.sol` - Common test utilities with standard addresses and helpers
 - ✅ `test/base/BasePodTest.sol` - Pod-specific deployment and wiring helpers
 - ✅ `test/mocks/MockERC20.sol` - ERC20 mock with mint/burn
@@ -41,6 +42,7 @@
 - ✅ `test/helpers/MerkleTreeHelper.sol` - Merkle proof generation
 
 **Achievements:**
+
 - All mock contracts implement required interfaces
 - Helper libraries provide reusable test utilities
 - Base classes enable consistent test patterns
@@ -52,9 +54,11 @@
 ### Status: 100% Complete
 
 ### ✅ FeeVaultPod Tests - 35 tests passing
+
 **File:** `test/unit/pod/FeeVaultPod.t.sol`
 
 **Coverage:**
+
 - ✅ Initialization (3 tests)
 - ✅ Fee rate management (4 tests)
 - ✅ Fee calculation (5 tests)
@@ -68,9 +72,11 @@
 ---
 
 ### ✅ EventPod Tests - 45 tests passing
+
 **File:** `test/unit/pod/EventPod.t.sol`
 
 **Coverage:**
+
 - ✅ Initialization (4 tests)
 - ✅ Event creation (10 tests)
 - ✅ Oracle request (5 tests)
@@ -85,9 +91,11 @@
 ---
 
 ### ✅ FundingPod Tests - 47 tests passing
+
 **File:** `test/unit/pod/FundingPod.t.sol`
 
 **Coverage:**
+
 - ✅ Initialization (2 tests)
 - ✅ Deposits (6 tests)
 - ✅ Withdrawals (6 tests)
@@ -106,9 +114,11 @@
 ---
 
 ### ✅ OrderBookPod Tests - 36 tests passing
+
 **File:** `test/unit/pod/OrderBookPod.t.sol`
 
 **Coverage:**
+
 - ✅ Initialization (1 test)
 - ✅ Event registration (4 tests)
 - ✅ Order placement (12 tests)
@@ -123,6 +133,7 @@
 **Result:** All 36 tests passing ✅
 
 **Issues Fixed:**
+
 1. ✅ OrderBookPod initialization bug (nextOrderId = 1)
 2. ✅ MockFundingPod interface completion
 3. ✅ OrderBookPod cancelOrder error priority
@@ -132,6 +143,7 @@
 ## 🔄 IN PROGRESS - Phase 3: Factory & Manager Layer Tests
 
 ### Priority 1: PodDeployer Tests (High Priority)
+
 **File:** `test/unit/factory/PodDeployer.t.sol` (NEW)
 **Estimated:** ~40-50 tests
 **Complexity:** Medium-High
@@ -139,11 +151,13 @@
 #### Test Categories:
 
 **Initialization (3 tests)**
+
 - [ ] Test valid initialization with all managers
 - [ ] Test revert on invalid manager addresses (zero addresses)
 - [ ] Test initial state verification
 
 **Pod Implementation Management (8 tests)**
+
 - [ ] Test setPodImplementation for EventPod (type 0)
 - [ ] Test setPodImplementation for OrderBookPod (type 1)
 - [ ] Test setPodImplementation for FeeVaultPod (type 2)
@@ -155,25 +169,28 @@
 
 **Individual Pod Deployment (16 tests - 4 per pod type)**
 For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
+
 - [ ] Test deploy using CREATE2
 - [ ] Test deployed address matches predicted address
 - [ ] Test pod initialized with correct parameters
 - [ ] Test emit PodDeployed event
 
 **Complete Pod Set Deployment (12 tests)**
+
 - [ ] Test deployPodSet creates all 4 pods
 - [ ] Test all addresses match predicted addresses
 - [ ] Test all pods initialized correctly
 - [ ] Test cross-pod references set correctly:
-  - [ ] EventPod → OrderBookManager reference
-  - [ ] OrderBookPod → EventPod/FundingPod/FeeVaultPod references
-  - [ ] FundingPod → OrderBookPod/EventPod references
-  - [ ] FeeVaultPod → OrderBookPod reference
+    - [ ] EventPod → OrderBookManager reference
+    - [ ] OrderBookPod → EventPod/FundingPod/FeeVaultPod references
+    - [ ] FundingPod → OrderBookPod/EventPod references
+    - [ ] FeeVaultPod → OrderBookPod reference
 - [ ] Test emit PodSetDeployed event
 - [ ] Test revert on duplicate deployment for same vendorId
 - [ ] Test revert on invalid vendorId (0)
 
 **Address Prediction (8 tests)**
+
 - [ ] Test predictPodAddress for each pod type (4 tests)
 - [ ] Test predicted address matches deployed address
 - [ ] Test revert on invalid pod type
@@ -181,6 +198,7 @@ For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
 - [ ] Test address prediction before deployment
 
 **CREATE2 Determinism (5 tests)**
+
 - [ ] Test same vendorId + podType → same address
 - [ ] Test different vendorIds → different addresses
 - [ ] Test different podTypes → different addresses
@@ -192,6 +210,7 @@ For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
 ---
 
 ### Priority 2: PodFactory Tests (Expand Existing)
+
 **File:** `test/PodFactoryRegistration.t.sol` → `test/unit/factory/PodFactory.t.sol`
 **Current:** 2 tests
 **Target:** ~25-30 tests
@@ -200,6 +219,7 @@ For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
 #### Test Categories:
 
 **Vendor Registration (8 tests)**
+
 - [x] Test basic vendor registration (existing)
 - [x] Test pod set deployment (existing)
 - [ ] Test register multiple vendors (3+)
@@ -210,6 +230,7 @@ For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
 - [ ] Test revert on duplicate vendor registration
 
 **Vendor Information (6 tests)**
+
 - [ ] Test getVendorInfo() returns correct data
 - [ ] Test getVendorPodSet() returns all 4 pod addresses
 - [ ] Test vendorAddressToId mapping works correctly
@@ -218,12 +239,14 @@ For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
 - [ ] Test revert on getVendorInfo for non-existent vendor
 
 **Vendor Isolation (4 tests)**
+
 - [ ] Test events don't cross vendors
 - [ ] Test each vendor has independent event IDs
 - [ ] Test pod addresses are unique per vendor
 - [ ] Test vendor A cannot access vendor B's pods
 
 **Configuration Management (10 tests)**
+
 - [ ] Test setPodDeployer success
 - [ ] Test setPodDeployer emit event
 - [ ] Test setEventManager success
@@ -244,10 +267,12 @@ For each pod type (EventPod, OrderBookPod, FundingPod, FeeVaultPod):
 These are coordinator contracts that manage vendor→pod mappings.
 
 #### EventManager Tests (NEW)
+
 **File:** `test/unit/core/EventManager.t.sol`
 **Estimated:** ~20-25 tests
 
 **Test Categories:**
+
 - [ ] Initialization (2 tests)
 - [ ] Pod registration/tracking (5 tests)
 - [ ] Vendor event management (6 tests)
@@ -256,10 +281,12 @@ These are coordinator contracts that manage vendor→pod mappings.
 - [ ] Edge cases (4 tests)
 
 #### OrderBookManager Tests (NEW)
+
 **File:** `test/unit/core/OrderBookManager.t.sol`
 **Estimated:** ~20-25 tests
 
 **Test Categories:**
+
 - [ ] Initialization (2 tests)
 - [ ] Pod registration/tracking (5 tests)
 - [ ] Order routing (6 tests)
@@ -268,10 +295,12 @@ These are coordinator contracts that manage vendor→pod mappings.
 - [ ] Edge cases (4 tests)
 
 #### FundingManager Tests (NEW)
+
 **File:** `test/unit/core/FundingManager.t.sol`
 **Estimated:** ~20-25 tests
 
 **Test Categories:**
+
 - [ ] Initialization (2 tests)
 - [ ] Pod registration/tracking (5 tests)
 - [ ] Fund routing (6 tests)
@@ -280,10 +309,12 @@ These are coordinator contracts that manage vendor→pod mappings.
 - [ ] Edge cases (4 tests)
 
 #### FeeVaultManager Tests (NEW)
+
 **File:** `test/unit/core/FeeVaultManager.t.sol`
 **Estimated:** ~20-25 tests
 
 **Test Categories:**
+
 - [ ] Initialization (2 tests)
 - [ ] Pod registration/tracking (5 tests)
 - [ ] Fee routing (6 tests)
@@ -300,11 +331,13 @@ These are coordinator contracts that manage vendor→pod mappings.
 ### Oracle Layer Tests
 
 #### OracleAdapter Tests (NEW)
+
 **File:** `test/unit/oracle/OracleAdapter.t.sol`
 **Estimated:** ~25-30 tests
 **Complexity:** Medium-High
 
 **Test Categories:**
+
 - [ ] Initialization (3 tests)
 - [ ] Oracle result submission (8 tests)
 - [ ] Merkle proof verification (6 tests)
@@ -314,10 +347,12 @@ These are coordinator contracts that manage vendor→pod mappings.
 - [ ] View functions (3 tests)
 
 #### OracleManager Tests (NEW)
+
 **File:** `test/unit/oracle/OracleManager.t.sol`
 **Estimated:** ~20-25 tests
 
 **Test Categories:**
+
 - [ ] Initialization (2 tests)
 - [ ] Oracle registration (6 tests)
 - [ ] Oracle authorization (5 tests)
@@ -332,11 +367,13 @@ These are coordinator contracts that manage vendor→pod mappings.
 ### Admin Layer Tests
 
 #### AdminFeeVault Tests (NEW)
+
 **File:** `test/unit/admin/AdminFeeVault.t.sol`
 **Estimated:** ~20-25 tests
 **Complexity:** Medium
 
 **Test Categories:**
+
 - [ ] Initialization (3 tests)
 - [ ] Fee collection from pods (5 tests)
 - [ ] Fee withdrawal (5 tests)
@@ -354,11 +391,13 @@ These are coordinator contracts that manage vendor→pod mappings.
 Integration tests verify end-to-end workflows across multiple contracts.
 
 ### EventLifecycle Integration Tests (NEW)
+
 **File:** `test/integration/EventLifecycle.t.sol`
 **Estimated:** ~30-35 tests
 **Complexity:** High
 
 #### Binary Event Flow (10 tests)
+
 - [ ] Register vendor via PodFactory
 - [ ] Deploy complete pod set
 - [ ] Vendor creates binary event (Yes/No)
@@ -375,6 +414,7 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Verify loser balances = 0
 
 #### Multi-Outcome Event Flow (8 tests)
+
 - [ ] Create event with 4 outcomes
 - [ ] Multiple users place orders on different outcomes
 - [ ] Test outcome A wins
@@ -385,6 +425,7 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Verify prize pool distribution
 
 #### Event Edge Cases (8 tests)
+
 - [ ] Event with no bets
 - [ ] Event cancellation flow
 - [ ] Event settlement before deadline (should fail)
@@ -395,6 +436,7 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Event with order cancellations
 
 #### Multi-Vendor Isolation (6 tests)
+
 - [ ] Vendor A creates event
 - [ ] Vendor B creates event
 - [ ] Verify events are isolated
@@ -405,10 +447,12 @@ Integration tests verify end-to-end workflows across multiple contracts.
 ---
 
 ### OrderFlow Integration Tests (NEW)
+
 **File:** `test/integration/OrderFlow.t.sol`
 **Estimated:** ~25-30 tests
 
 #### Basic Order Flows (6 tests)
+
 - [ ] Complete buy order flow
 - [ ] Complete sell order flow
 - [ ] Order cancellation flow
@@ -417,6 +461,7 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Multiple orders different users
 
 #### Order Matching Scenarios (12 tests)
+
 - [ ] Partial fill - buy side
 - [ ] Partial fill - sell side
 - [ ] Complete fill - exact match
@@ -431,12 +476,14 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Market clearing scenarios
 
 #### Fee Collection Integration (4 tests)
+
 - [ ] Fee calculation on order placement
 - [ ] Fee transfer to FeeVaultPod
 - [ ] Fee recording in eventFees
 - [ ] Fee recording in userPaidFees
 
 #### Edge Cases (6 tests)
+
 - [ ] Order placement on settled event (should fail)
 - [ ] Order cancellation on settled event (should fail)
 - [ ] Zero price order (should fail)
@@ -447,10 +494,12 @@ Integration tests verify end-to-end workflows across multiple contracts.
 ---
 
 ### CompleteSetFlow Integration Tests (NEW)
+
 **File:** `test/integration/CompleteSetFlow.t.sol`
 **Estimated:** ~20-25 tests
 
 #### Complete Set Operations (8 tests)
+
 - [ ] Mint complete set success
 - [ ] Burn complete set success
 - [ ] Mint → Trade → Burn flow
@@ -461,6 +510,7 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Prize pool accounting accuracy
 
 #### Trading with Complete Sets (6 tests)
+
 - [ ] Mint set, sell one outcome, buy back, burn set
 - [ ] Mint set, partial sell, verify can't burn
 - [ ] Multiple users trading after minting
@@ -469,6 +519,7 @@ Integration tests verify end-to-end workflows across multiple contracts.
 - [ ] Cross-user complete set operations
 
 #### Edge Cases (8 tests)
+
 - [ ] Mint with insufficient USDT (should fail)
 - [ ] Burn without complete set (should fail)
 - [ ] Mint on non-existent event (should fail)
@@ -485,12 +536,15 @@ Integration tests verify end-to-end workflows across multiple contracts.
 ## 🎯 Execution Strategy
 
 ### Phase 3: Factory & Manager Tests (Week 1-2)
+
 **Priority Order:**
+
 1. **PodDeployer** (Days 1-3) - Critical infrastructure
 2. **PodFactory** (Day 4) - Expand existing tests
 3. **Manager Layer** (Days 5-8) - All 4 managers in parallel
 
 **Approach:**
+
 - Create comprehensive test files
 - Focus on cross-contract interactions
 - Verify CREATE2 determinism
@@ -499,12 +553,15 @@ Integration tests verify end-to-end workflows across multiple contracts.
 ---
 
 ### Phase 4: Oracle & Admin Tests (Week 3)
+
 **Priority Order:**
+
 1. **OracleAdapter** (Days 1-2) - Critical for event settlement
 2. **OracleManager** (Day 3) - Oracle coordination
 3. **AdminFeeVault** (Day 4) - Fee management
 
 **Approach:**
+
 - Focus on merkle proof verification
 - Test reentrancy protection
 - Verify access control
@@ -513,12 +570,15 @@ Integration tests verify end-to-end workflows across multiple contracts.
 ---
 
 ### Phase 5: Integration Tests (Week 4)
+
 **Priority Order:**
+
 1. **EventLifecycle** (Days 1-2) - End-to-end event flow
 2. **OrderFlow** (Days 3-4) - Order matching and fees
 3. **CompleteSetFlow** (Day 5) - Complete set operations
 
 **Approach:**
+
 - Use real contracts, not mocks
 - Test full workflows
 - Verify state consistency
@@ -531,25 +591,27 @@ Integration tests verify end-to-end workflows across multiple contracts.
 ### Current Status (as of 2026-01-23)
 
 **Completed:**
+
 - ✅ Phase 1: Test Infrastructure (100%)
 - ✅ Phase 2: Pod Unit Tests (100% - 163 tests)
 - ✅ PodFactory: Basic tests (2 tests)
 
 **Total Tests:**
+
 - **Current:** 165 tests passing
 - **Estimated Total:** ~400-450 tests
 - **Progress:** 41% complete
 
 ### Remaining Work:
 
-| Phase | Component | Tests | Status |
-|-------|-----------|-------|--------|
-| Phase 3 | PodDeployer | ~52 | ⏳ Todo |
-| Phase 3 | PodFactory (expand) | ~26 | ⏳ Todo |
-| Phase 3 | Manager Layer | ~80-100 | ⏳ Todo |
-| Phase 4 | Oracle Layer | ~45-55 | ⏳ Todo |
-| Phase 4 | Admin Layer | ~20-25 | ⏳ Todo |
-| Phase 5 | Integration Tests | ~75-90 | ⏳ Todo |
+| Phase   | Component           | Tests   | Status  |
+| ------- | ------------------- | ------- | ------- |
+| Phase 3 | PodDeployer         | ~52     | ⏳ Todo |
+| Phase 3 | PodFactory (expand) | ~26     | ⏳ Todo |
+| Phase 3 | Manager Layer       | ~80-100 | ⏳ Todo |
+| Phase 4 | Oracle Layer        | ~45-55  | ⏳ Todo |
+| Phase 4 | Admin Layer         | ~20-25  | ⏳ Todo |
+| Phase 5 | Integration Tests   | ~75-90  | ⏳ Todo |
 
 **Total Remaining:** ~298-348 tests
 
@@ -582,6 +644,7 @@ forge coverage --report lcov
 ### Coverage Targets
 
 **Per-Contract Goals:**
+
 - ✅ FeeVaultPod: >95% (currently: excellent)
 - ✅ EventPod: >90% (currently: excellent)
 - ✅ FundingPod: >90% (currently: excellent)
@@ -597,6 +660,7 @@ forge coverage --report lcov
 ### Critical Path Verification
 
 Must verify these end-to-end flows work correctly:
+
 - [ ] Vendor registration → Pod deployment
 - [ ] Event creation → Oracle result → Settlement → Payout
 - [ ] Order placement → Matching → Fee collection
@@ -612,42 +676,44 @@ Must verify these end-to-end flows work correctly:
 ### Best Practices
 
 1. **Test Organization:**
-   - One test file per contract
-   - Group related tests in sections with clear comments
-   - Use descriptive test names: `test_functionName_scenario`
+    - One test file per contract
+    - Group related tests in sections with clear comments
+    - Use descriptive test names: `test_functionName_scenario`
 
 2. **Mock Usage:**
-   - Use real contracts in integration tests
-   - Use mocks only in unit tests for isolation
-   - Keep mocks simple and focused
+    - Use real contracts in integration tests
+    - Use mocks only in unit tests for isolation
+    - Keep mocks simple and focused
 
 3. **Test Structure:**
-   ```solidity
-   function test_functionName_scenario() public {
-       // Setup
-       // Execute
-       // Assert
-   }
-   ```
+
+    ```solidity
+    function test_functionName_scenario() public {
+        // Setup
+        // Execute
+        // Assert
+    }
+    ```
 
 4. **Event Testing:**
-   - Always verify events are emitted
-   - Check event parameters match expected values
-   - Use `vm.expectEmit(true, true, true, true)`
+    - Always verify events are emitted
+    - Check event parameters match expected values
+    - Use `vm.expectEmit(true, true, true, true)`
 
 5. **Error Testing:**
-   - Test all revert conditions
-   - Use specific error selectors when possible
-   - Test error messages are correct
+    - Test all revert conditions
+    - Use specific error selectors when possible
+    - Test error messages are correct
 
 6. **Gas Optimization:**
-   - Review gas reports regularly
-   - Identify expensive operations
-   - Consider optimizations for hot paths
+    - Review gas reports regularly
+    - Identify expensive operations
+    - Consider optimizations for hot paths
 
 ### Common Patterns
 
 **Setup Pattern:**
+
 ```solidity
 function setUp() public override {
     super.setUp();
@@ -658,6 +724,7 @@ function setUp() public override {
 ```
 
 **Revert Testing Pattern:**
+
 ```solidity
 function test_function_revertsOnCondition() public {
     vm.expectRevert(ErrorSelector);
@@ -666,6 +733,7 @@ function test_function_revertsOnCondition() public {
 ```
 
 **State Change Testing Pattern:**
+
 ```solidity
 function test_function_changesState() public {
     uint256 before = contract.stateVariable();
@@ -680,12 +748,14 @@ function test_function_changesState() public {
 ## 🐛 Known Issues & Fixes Applied
 
 ### Fixed Issues (Completed):
+
 1. ✅ **OrderBookPod initialization bug**: Added `nextOrderId = 1` in initialize()
 2. ✅ **MockFundingPod missing functions**: Added `registerEvent()` and `settleMatchedOrder()`
 3. ✅ **MockFundingPod interface mismatch**: Fixed `unlockForOrder()` parameters
 4. ✅ **OrderBookPod error priority**: Swapped check order in `cancelOrder()`
 
 ### Potential Future Issues:
+
 - CREATE2 determinism must be thoroughly tested
 - Cross-pod reentrancy scenarios need verification
 - Manager layer routing must handle edge cases
@@ -696,16 +766,19 @@ function test_function_changesState() public {
 ## 📚 Resources & Documentation
 
 ### Key Files:
+
 - `CLAUDE.md` - Project architecture and patterns
 - `foundry.toml` - Build configuration (via-IR enabled)
 - `src/interfaces/` - All interface definitions
 
 ### Testing Tools:
+
 - Forge (Foundry) - Test framework
 - OpenZeppelin Test Helpers - Via forge-std
 - Custom test helpers in `test/helpers/`
 
 ### Reference Documentation:
+
 - Foundry Book: https://book.getfoundry.sh/
 - Solidity Docs: https://docs.soliditylang.org/
 - OpenZeppelin Contracts: https://docs.openzeppelin.com/
@@ -715,6 +788,7 @@ function test_function_changesState() public {
 ## 🎉 Success Metrics
 
 ### Definition of Done:
+
 - [ ] All unit tests passing (target: ~320 tests)
 - [ ] All integration tests passing (target: ~80 tests)
 - [ ] Overall coverage >85%
@@ -724,6 +798,7 @@ function test_function_changesState() public {
 - [ ] No security vulnerabilities identified
 
 ### Final Deliverables:
+
 1. Comprehensive test suite (400+ tests)
 2. Coverage report showing >85%
 3. Gas optimization report
@@ -745,3 +820,127 @@ function test_function_changesState() public {
 - Tests not run in this session.
 - Replaced pod upgradeable bases with `PodBase` (initializer + ownable + pausable) and removed pod storage upgrade gaps.
 - Updated pod test deployments to use clones instead of ERC1967 proxies for non-upgradeable pods.
+
+- [ ] Vendor entry confirmation
+- [ ] Fix pod withdraw to push to admin fee vault only
+
+---
+
+## 🚀 Deployment Script Implementation (Current Session)
+
+### Overview
+Create comprehensive Foundry deployment script system for 17 contracts (13 upgradeable + 4 pod implementations).
+
+### Files to Create:
+1. [x] `script/utils/DeploymentConstants.sol` - Constants (pod types, fee ratios, oracle defaults)
+2. [x] `script/config/DeploymentAddresses.sol` - Address tracking struct
+3. [x] `script/config/DeploymentConfig.sol` - Network-specific configs (Anvil, Sepolia, Base)
+4. [x] `script/helpers/ProxyHelper.sol` - Proxy deployment utilities
+5. [x] `script/Deploy.s.sol` - Main orchestrator (6 phases)
+6. [x] `script/verification/PostDeploymentCheck.sol` - Verification logic
+7. [x] Update `Makefile` - Add deployment commands
+
+### Deployment Phases:
+- [x] **Phase 1:** Deploy 4 pod implementations (no proxies)
+- [x] **Phase 2:** Deploy 4 managers behind proxies
+- [x] **Phase 3:** Deploy factory layer (PodDeployer, PodFactory) behind proxies
+- [x] **Phase 4:** Deploy admin & oracle behind proxies
+- [x] **Phase 5:** Wire contracts together (set references)
+- [x] **Phase 6:** Configure system (fees, oracles, ratios)
+- [x] **Phase 7:** Post-deployment verification
+- [x] **Phase 8:** Save addresses to JSON
+
+### Critical Dependencies:
+- ✅ PodDeployer initialization requires all 4 manager addresses
+- ✅ OracleAdapter requires non-zero oracleConsumer (use eventManager as placeholder)
+- ✅ All pod implementations must be registered in PodDeployer before vendor registration
+
+### Testing:
+- [x] Test deployment on Roothash testnet
+- [x] Verify all 17 contracts deployed
+- [x] Verify cross-references correct
+- [ ] Test vendor registration works
+- [ ] Test basic operations (create event, place order)
+
+### ✅ Deployment Results (Roothash Testnet - Chain ID 90101)
+
+**Deployment Status:** ✅ SUCCESS
+**Verification Status:** ✅ ALL 13 CONTRACTS VERIFIED
+**Timestamp:** 2026-01-25 03:33 UTC
+**Gas Used:** 31,779,655 gas
+**Total Cost:** 0.254 ETH
+
+**Pod Implementations (for cloning):**
+- EventPod: `0xccD33225316e0660B064E564FD24F01ACa313cc3` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0xccD33225316e0660B064E564FD24F01ACa313cc3)
+- OrderBookPod: `0x745ed68f8EF727a9B80e9a7CD48583864169acd6` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x745ed68f8EF727a9B80e9a7CD48583864169acd6)
+- FundingPod: `0x970D203944Ebc552F313C24B6d896afA9aDCfbD8` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x970D203944Ebc552F313C24B6d896afA9aDCfbD8)
+- FeeVaultPod: `0x2C535088020aDA6ee6885e38aCaa7750a44eB756` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x2C535088020aDA6ee6885e38aCaa7750a44eB756)
+
+**Core Contracts (proxies):**
+- PodFactory: `0x51366cd826D1de34f687717ac9770739f9153E2B` ⭐ [View](https://explorer-testnet.roothashpay.com/address/0x51366cd826D1de34f687717ac9770739f9153E2B)
+  - Implementation: `0x279Da44a64696f5D1A65e89711B3702EE6a98AEe` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x279Da44a64696f5D1A65e89711B3702EE6a98AEe)
+- PodDeployer: `0xAE8e502Ec43627b5C44e156a890d15d5E920E5D1` [View](https://explorer-testnet.roothashpay.com/address/0xAE8e502Ec43627b5C44e156a890d15d5E920E5D1)
+  - Implementation: `0xdfCFC84fFbE233ffA245f4fdf737d48E077f5B6e` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0xdfCFC84fFbE233ffA245f4fdf737d48E077f5B6e)
+- EventManager: `0x92383b49e597162d43378Ea7Afc6fD3D38333c1c` [View](https://explorer-testnet.roothashpay.com/address/0x92383b49e597162d43378Ea7Afc6fD3D38333c1c)
+  - Implementation: `0x21B0999BFAfE1fa4d994fd4A15D0D2Ac58157D17` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x21B0999BFAfE1fa4d994fd4A15D0D2Ac58157D17)
+- OrderBookManager: `0x7bfF4f84e5E1dB6a7da3d9191c2BcfE2de898e4D` [View](https://explorer-testnet.roothashpay.com/address/0x7bfF4f84e5E1dB6a7da3d9191c2BcfE2de898e4D)
+  - Implementation: `0x0F1Dc47020a04943b8C563b04470FAF7D6f22F0e` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x0F1Dc47020a04943b8C563b04470FAF7D6f22F0e)
+- FundingManager: `0xfc92adB24Cd4A5e403D2b197D5E9A76D1EF50B54` [View](https://explorer-testnet.roothashpay.com/address/0xfc92adB24Cd4A5e403D2b197D5E9A76D1EF50B54)
+  - Implementation: `0x8731B7d11D2eeb66f58112E7Dd81A9A01D6e2e9c` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x8731B7d11D2eeb66f58112E7Dd81A9A01D6e2e9c)
+- FeeVaultManager: `0xA6D1cfd2094eAdE839F5fd3b30B107962E4f459d` [View](https://explorer-testnet.roothashpay.com/address/0xA6D1cfd2094eAdE839F5fd3b30B107962E4f459d)
+  - Implementation: `0x4a0b9808218a999a4E486Cf26c0928ED1066402d` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x4a0b9808218a999a4E486Cf26c0928ED1066402d)
+- OracleManager: `0x9Ed2fcD62fF9f4291c698CcFd9DBdbd9271e8904` [View](https://explorer-testnet.roothashpay.com/address/0x9Ed2fcD62fF9f4291c698CcFd9DBdbd9271e8904)
+  - Implementation: `0xF93e19E489bD1a5C2BB693f769E8CB7f2777A0c0` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0xF93e19E489bD1a5C2BB693f769E8CB7f2777A0c0)
+- OracleAdapter: `0xB2520360f49368ED0d212A0A590C4e6Fb2012c2D` [View](https://explorer-testnet.roothashpay.com/address/0xB2520360f49368ED0d212A0A590C4e6Fb2012c2D)
+  - Implementation: `0x8431F0b53B3CbFb13b546F2803a020864d611d80` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x8431F0b53B3CbFb13b546F2803a020864d611d80)
+- AdminFeeVault: `0x219189B134cEd02166b20409C28A555421ad7B06` [View](https://explorer-testnet.roothashpay.com/address/0x219189B134cEd02166b20409C28A555421ad7B06)
+  - Implementation: `0x27D290d32a79207Ad5773e643377e5f18998A4c6` ✅ [Verified](https://explorer-testnet.roothashpay.com/address/0x27D290d32a79207Ad5773e643377e5f18998A4c6)
+
+**Transaction Log:** `/home/v/Dev/Ethereum/Contribute/event-prediction/broadcast/Deploy.s.sol/90101/run-latest.json`
+
+**All Phases Completed:**
+- ✅ Phase 1: Pod implementations deployed
+- ✅ Phase 2: Managers deployed and initialized
+- ✅ Phase 3: Factory layer deployed
+- ✅ Phase 4: Admin & Oracle deployed
+- ✅ Phase 5: All contracts wired together
+- ✅ Phase 6: System configured (fees, oracles, beneficiaries)
+- ✅ Verification: All checks passed
+- ✅ Contract Verification: All 13 implementations verified on Blockscout
+
+### Implementation Summary:
+All deployment script files successfully created and compiled:
+1. ✅ DeploymentConstants.sol - Pod types, fee ratios, oracle defaults
+2. ✅ DeploymentAddresses.sol - Struct tracking all 26 addresses (13 impl + 13 proxy)
+3. ✅ DeploymentConfig.sol - Network configs for Anvil, Sepolia, Base Sepolia, Arbitrum Sepolia, Optimism Sepolia, Roothash
+4. ✅ ProxyHelper.sol - ERC1967Proxy deployment helper
+5. ✅ Deploy.s.sol - Main orchestrator with 6 deployment phases
+6. ✅ PostDeploymentCheck.sol - Comprehensive verification checks
+7. ✅ Makefile - Added deployment commands for all networks
+
+### Supported Networks:
+- **Local**: `make deploy-prediction-local` (Anvil, Chain ID: 31337)
+- **Sepolia**: `make deploy-prediction-sepolia` (Chain ID: 11155111)
+- **Roothash**: `make deploy-prediction-roothash` (Chain ID: 7668378)
+- **Base Sepolia**: `make deploy-prediction-base-sepolia` (Chain ID: 84532)
+- **Arbitrum Sepolia**: `make deploy-prediction-arbitrum-sepolia` (Chain ID: 421614)
+- **Optimism Sepolia**: `make deploy-prediction-optimism-sepolia` (Chain ID: 11155420)
+
+### Key Features:
+- **Modular architecture** - Separate files for constants, config, helpers, verification
+- **Network support** - 6 networks supported (Anvil, Sepolia, Roothash, Base Sepolia, Arbitrum Sepolia, Optimism Sepolia)
+- **Proper sequencing** - Deploys in correct order respecting dependencies
+- **ERC1967 proxies** - All upgradeable contracts deployed behind proxies
+- **Clone pattern** - Pod implementations deployed as bare contracts for EIP-1167 cloning
+- **Comprehensive wiring** - Phase 5 connects all contract references
+- **System configuration** - Phase 6 sets fees, oracles, beneficiaries
+- **Verification** - Automated checks for addresses, references, implementations
+- **Address persistence** - Saves deployment to deployments/{network}.json
+
+### Next Steps:
+- Run deployment on local Anvil to test end-to-end
+- Verify all contracts deploy correctly
+- Test vendor registration post-deployment
+- Document deployment process for mainnet
+
+---
