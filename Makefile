@@ -46,7 +46,8 @@ anvil :; anvil -m 'test test test test test test test test test test test junk' 
 
 NETWORK_ARGS := --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast
 NETWORK_SEPOLIA:= --rpc-url $(SEPOLIA_RPC_URL) --account devWallet --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
-NETWORK_ROOTHASH:= --rpc-url $(RHS_TESTNET_RPC_URL) --private-key $(SEPOLIA_PRIV_KEY) --broadcast   -vvvv
+NETWORK_ROOTHASH:= --rpc-url $(RHS_TESTNET_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -vvvv
+NETWORK_HASHKEY:= --rpc-url $(HASHKEY_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -vvvv
 
 # ============ L2 部署配置 (推荐用于生产环境) ============
 # Arbitrum One (主网)
@@ -77,6 +78,9 @@ deploy-local:
 deploy-roothash:
 	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_ROOTHASH)
 
+deploy-hashkey:
+	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_HASHKEY)
+
 # ============ L2 部署命令 (推荐) ============
 deploy-arbitrum:
 	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_ARBITRUM)
@@ -105,6 +109,9 @@ deploy-prediction-sepolia:
 
 deploy-prediction-roothash:
 	@forge script script/Deploy.s.sol:Deploy $(NETWORK_ROOTHASH)
+
+deploy-prediction-hashkey:
+	@forge script script/Deploy.s.sol:Deploy $(NETWORK_HASHKEY)
 
 deploy-prediction-base-sepolia:
 	@forge script script/Deploy.s.sol:Deploy $(NETWORK_BASE_SEPOLIA)

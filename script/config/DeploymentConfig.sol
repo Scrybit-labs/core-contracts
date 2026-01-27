@@ -59,6 +59,9 @@ contract DeploymentConfig is Script {
         } else if (chainId == 90101) {
             // Roothash Testnet
             return getRoothashConfig();
+        } else if (chainId == 133) {
+            // Hashkey Testnet
+            return getHashkeyConfig();
         }
 
         revert("Unsupported network");
@@ -225,6 +228,39 @@ contract DeploymentConfig is Script {
 
         return NetworkConfig({
             networkName: "roothash-testnet",
+            initialOwner: owner,
+            requestTimeout: 1 hours,
+            minConfirmations: 1,
+            initialOracles: oracles,
+            feeConfig: FeeConfig({
+                treasuryRecipient: treasury,
+                teamRecipient: team,
+                liquidityRecipient: liquidity,
+                treasuryRatio: 5000,
+                teamRatio: 3000,
+                liquidityRatio: 2000
+            })
+        });
+    }
+
+    function getHashkeyConfig() internal view returns (NetworkConfig memory) {
+        // Load from environment variables (same pattern as Sepolia)
+        address owner = vm.envOr("INITIAL_OWNER", msg.sender);
+        address treasury = vm.envOr("TREASURY_RECIPIENT", msg.sender);
+        address team = vm.envOr("TEAM_RECIPIENT", msg.sender);
+        address liquidity = vm.envOr("LIQUIDITY_RECIPIENT", msg.sender);
+
+        // Load oracle address if provided
+        address[] memory oracles;
+        try vm.envAddress("ORACLE_ADDRESS") returns (address oracleAddr) {
+            oracles = new address[](1);
+            oracles[0] = oracleAddr;
+        } catch {
+            oracles = new address[](0);
+        }
+
+        return NetworkConfig({
+            networkName: "hashkey-testnet",
             initialOwner: owner,
             requestTimeout: 1 hours,
             minConfirmations: 1,
