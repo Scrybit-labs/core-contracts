@@ -31,12 +31,9 @@ contract OracleAdapter is
         _;
     }
 
-    /// @notice 仅 EventManager 或授权的 EventPod 可调用
-    modifier onlyEventManagerOrAuthorizedPod() {
-        require(
-            msg.sender == eventManager || authorizedEventPods[msg.sender],
-            "OracleAdapter: only eventManager or authorized EventPod"
-        );
+    /// @notice 仅授权的 EventPod 可调用
+    modifier onlyAuthorizedEventPod() {
+        require(authorizedEventPods[msg.sender], "OracleAdapter: only authorized EventPod");
         _;
     }
 
@@ -49,18 +46,15 @@ contract OracleAdapter is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _eventManager EventManager 地址
      * @param _oracleConsumer OracleConsumer 地址(EventPod)
      */
-    function initialize(address initialOwner, address _eventManager, address _oracleConsumer) external initializer {
+    function initialize(address initialOwner, address _oracleConsumer) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-
-        require(_eventManager != address(0), "OracleAdapter: invalid eventManager");
-        require(_oracleConsumer != address(0), "OracleAdapter: invalid oracleConsumer");
-
-        eventManager = _eventManager;
         oracleConsumer = _oracleConsumer;
+        if (_oracleConsumer != address(0)) {
+            authorizedEventPods[_oracleConsumer] = true;
+        }
 
         // 设置默认配置
         requestTimeout = DEFAULT_REQUEST_TIMEOUT;
@@ -78,7 +72,7 @@ contract OracleAdapter is
     function requestEventResult(
         uint256 eventId,
         string calldata eventDescription
-    ) external whenNotPaused onlyEventManagerOrAuthorizedPod returns (bytes32 requestId) {
+    ) external whenNotPaused onlyAuthorizedEventPod returns (bytes32 requestId) {
         if (eventId == 0) revert InvalidEventId(eventId);
 
         // 检查是否已存在请求
@@ -301,15 +295,6 @@ contract OracleAdapter is
         require(authorizedEventPods[eventPod], "OracleAdapter: not authorized");
 
         authorizedEventPods[eventPod] = false;
-    }
-
-    /**
-     * @notice 设置 EventManager 地址
-     * @param _eventManager EventManager 地址
-     */
-    function setEventManager(address _eventManager) external onlyOwner {
-        require(_eventManager != address(0), "OracleAdapter: invalid address");
-        eventManager = _eventManager;
     }
 
     /**

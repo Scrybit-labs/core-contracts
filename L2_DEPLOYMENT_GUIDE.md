@@ -53,13 +53,13 @@ BASESCAN_API_KEY=your_basescan_key  # 用于合约验证
 
 ```bash
 # Base Sepolia (推荐)
-make deploy-base-sepolia
+make deploy-prediction-base-sepolia
 
 # Arbitrum Sepolia
-make deploy-arbitrum-sepolia
+make deploy-prediction-arbitrum-sepolia
 
 # Optimism Sepolia
-make deploy-optimism-sepolia
+make deploy-prediction-optimism-sepolia
 ```
 
 ### 第四步：验证部署
@@ -72,6 +72,8 @@ EventPod: 0x...
 OrderBookPod: 0x...
 FundingPod: 0x...
 FeeVaultPod: 0x...
+OracleManager: 0x...
+OracleAdapter: 0x...
 ```
 
 验证合约：
@@ -103,13 +105,13 @@ FeeVaultPod: 0x...
 
 ```bash
 # Base (推荐：Gas 最低)
-make deploy-base
+make deploy-prediction-base
 
 # Arbitrum (推荐：最成熟)
-make deploy-arbitrum
+make deploy-prediction-arbitrum
 
 # Optimism (推荐：生态丰富)
-make deploy-optimism
+make deploy-prediction-optimism
 ```
 
 ---

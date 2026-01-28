@@ -23,12 +23,6 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
 
     // ============ Modifiers ============
 
-    /// @notice 仅 FundingManager 可调用
-    modifier onlyFundingManager() {
-        require(msg.sender == fundingManager, "FundingPod: only fundingManager");
-        _;
-    }
-
     /// @notice 仅 OrderBookPod 可调用
     modifier onlyOrderBookPod() {
         require(msg.sender == orderBookPod, "FundingPod: only orderBookPod");
@@ -50,21 +44,16 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _fundingManager FundingManager 合约地址
      * @param _orderBookPod OrderBookPod 合约地址
      * @param _eventPod EventPod 合约地址
      */
     function initialize(
         address initialOwner,
-        address _fundingManager,
         address _orderBookPod,
         address _eventPod
     ) external initializer {
         _initializeOwner(initialOwner);
         _initializePausable();
-        require(_fundingManager != address(0), "FundingPod: invalid fundingManager");
-
-        fundingManager = _fundingManager;
         orderBookPod = _orderBookPod;
         eventPod = _eventPod;
     }
@@ -117,21 +106,6 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
         totalDeposited[tokenAddress] += amount;
 
         emit DepositToken(tokenAddress, user, amount);
-    }
-
-    /**
-     * @notice 资金管理提现 (由 FundingManager 调用)
-     * @param tokenAddress Token 地址
-     * @param withdrawAddress 提现目标地址
-     * @param amount 金额
-     */
-    function withdraw(
-        address user,
-        address tokenAddress,
-        address payable withdrawAddress,
-        uint256 amount
-    ) external onlyFundingManager nonReentrant {
-        _withdraw(user, tokenAddress, withdrawAddress, amount);
     }
 
     /**
@@ -223,10 +197,6 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param token Token 地址
      * @param amount 铸造数量
      */
-    function mintCompleteSet(address user, uint256 eventId, address token, uint256 amount) external onlyFundingManager {
-        _mintCompleteSet(user, eventId, token, amount);
-    }
-
     /**
      * @notice 用户直接铸造完整集合
      * @param eventId 事件 ID
@@ -268,10 +238,6 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param token Token 地址
      * @param amount 销毁数量
      */
-    function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount) external onlyFundingManager {
-        _burnCompleteSet(user, eventId, token, amount);
-    }
-
     /**
      * @notice 用户直接销毁完整集合
      * @param eventId 事件 ID
@@ -585,15 +551,6 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
     function setEventPod(address _eventPod) external onlyOwner {
         require(_eventPod != address(0), "FundingPod: invalid address");
         eventPod = _eventPod;
-    }
-
-    /**
-     * @notice 更新 FundingManager 地址
-     * @param _fundingManager 新地址
-     */
-    function setFundingManager(address _fundingManager) external onlyOwner {
-        require(_fundingManager != address(0), "FundingPod: invalid address");
-        fundingManager = _fundingManager;
     }
 
     // ============ 紧急控制 Emergency Control ============

@@ -51,10 +51,16 @@ interface IEventPod {
     /// @notice 预言机结果接收事件
     event OracleResultReceived(uint256 indexed eventId, uint8 winningOutcomeIndex, address indexed oracle);
 
+    /// @notice 事件创建者添加事件
+    event EventCreatorAdded(address indexed creator);
+
+    /// @notice 事件创建者移除事件
+    event EventCreatorRemoved(address indexed creator);
+
     // ============ 核心功能 Functions ============
 
     /**
-     * @notice 创建事件 (Vendor direct call)
+     * @notice 创建事件 (Event creator direct call)
      * @param title 事件标题
      * @param description 事件描述
      * @param deadline 下注截止时间
@@ -71,7 +77,7 @@ interface IEventPod {
     ) external returns (uint256 eventId);
 
     /**
-     * @notice 请求预言机结果 (Vendor direct call)
+     * @notice 请求预言机结果 (Event creator direct call)
      * @param eventId 事件 ID
      * @return requestId 预言机请求 ID
      */
@@ -98,6 +104,24 @@ interface IEventPod {
      * @param reason 取消原因
      */
     function cancelEvent(uint256 eventId, string calldata reason) external;
+
+    /**
+     * @notice 添加事件创建者
+     * @param creator 创建者地址
+     */
+    function addEventCreator(address creator) external;
+
+    /**
+     * @notice 移除事件创建者
+     * @param creator 创建者地址
+     */
+    function removeEventCreator(address creator) external;
+
+    /**
+     * @notice 更新 OrderBookPod 地址
+     * @param _orderBookPod 新地址
+     */
+    function setOrderBookPod(address _orderBookPod) external;
 
     // ============ 查询功能 View Functions ============
 

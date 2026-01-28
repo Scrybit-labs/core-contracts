@@ -16,9 +16,6 @@ abstract contract FundingPodStorage is IFundingPod {
 
     // ============ 基础状态变量 Basic State Variables ============
 
-    /// @notice FundingManager 合约地址
-    address public fundingManager;
-
     /// @notice OrderBookPod 合约地址(用于调用权限控制)
     address public orderBookPod;
 

@@ -57,9 +57,6 @@ abstract contract OracleAdapterStorage is IOracle {
     /// @notice 最小确认数(多预言机共识)
     uint256 public minConfirmations;
 
-    /// @notice EventManager 地址
-    address public eventManager;
-
     /// @notice OracleConsumer 地址(EventPod)
     address public oracleConsumer;
 
@@ -84,6 +81,6 @@ abstract contract OracleAdapterStorage is IOracle {
 
     // ============ 预留升级空间 Upgrade Reserve ============
 
-    /// @notice 预留 storage slots (减去1个mapping = 34 slots)
-    uint256[34] private __gap;
+    /// @notice 预留 storage slots (减去1个mapping = 35 slots)
+    uint256[35] private __gap;
 }

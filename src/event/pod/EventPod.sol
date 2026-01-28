@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import "./PodBase.sol";
 import "./EventPodStorage.sol";
 import "../../interfaces/event/IEventPod.sol";
-import "../../interfaces/event/IOrderBookManager.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
 import "../../interfaces/oracle/IOracle.sol";
 
@@ -16,9 +15,9 @@ import "../../interfaces/oracle/IOracle.sol";
 contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
     // ============ Modifiers ============
 
-    /// @notice 仅 Vendor 可调用
-    modifier onlyVendor() {
-        require(msg.sender == vendorAddress, "EventPod: only vendor");
+    /// @notice 仅事件创建者或所有者可调用
+    modifier onlyEventCreator() {
+        require(msg.sender == owner() || isEventCreator[msg.sender], "EventPod: not authorized");
         _;
     }
 
@@ -34,6 +33,12 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         _;
     }
 
+    /// @notice 仅事件创建者或所有者可操作对应事件
+    modifier onlyEventCreatorOrOwner(uint256 eventId) {
+        require(msg.sender == owner() || events[eventId].creator == msg.sender, "EventPod: not event creator");
+        _;
+    }
+
     // ============ Constructor & Initializer ============
 
     constructor() {
@@ -43,32 +48,27 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _vendorId Vendor ID
-     * @param _eventManager EventManager 合约地址
-     * @param _orderBookManager OrderBookManager 合约地址
+     * @param _orderBookPod OrderBookPod 合约地址
+     * @param _oracleAdapter OracleAdapter 合约地址
      */
     function initialize(
         address initialOwner,
-        uint256 _vendorId,
-        address _eventManager,
-        address _orderBookManager
+        address _orderBookPod,
+        address _oracleAdapter
     ) external initializer {
         _initializeOwner(initialOwner);
-        require(_eventManager != address(0), "EventPod: invalid eventManager");
-        require(_orderBookManager != address(0), "EventPod: invalid orderBookManager");
-        require(_vendorId > 0, "EventPod: invalid vendorId");
-
-        vendorId = _vendorId;
-        vendorAddress = initialOwner;
-        eventManager = _eventManager;
-        orderBookManager = _orderBookManager;
+        orderBookPod = _orderBookPod;
+        oracleAdapter = _oracleAdapter;
         nextEventId = 1; // Start from 1
+
+        // Owner is an event creator by default
+        isEventCreator[initialOwner] = true;
     }
 
     // ============ 核心功能 Functions ============
 
     /**
-     * @notice 创建事件 (Vendor direct call)
+     * @notice 创建事件 (Event creator direct call)
      * @param title 事件标题
      * @param description 事件描述
      * @param deadline 下注截止时间
@@ -82,7 +82,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         uint256 deadline,
         uint256 settlementTime,
         Outcome[] calldata outcomes
-    ) external onlyVendor returns (uint256 eventId) {
+    ) external onlyEventCreator returns (uint256 eventId) {
         // Validate parameters
         require(bytes(title).length > 0, "EventPod: empty title");
         require(deadline > block.timestamp, "EventPod: deadline must be in future");
@@ -101,38 +101,32 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         newEvent.deadline = deadline;
         newEvent.settlementTime = settlementTime;
         newEvent.status = EventStatus.Created;
-        newEvent.creator = vendorAddress;
+        newEvent.creator = msg.sender;
         newEvent.winningOutcomeIndex = 0;
         newEvent.outcomes = outcomes;
 
         // Mark event exists
         eventExists[eventId] = true;
 
-        // Add to active list
-        _addToActiveList(eventId);
-
         emit EventCreated(eventId, title, deadline, outcomes.length);
     }
 
     /**
-     * @notice 请求预言机结果 (Vendor direct call)
+     * @notice 请求预言机结果 (Event creator direct call)
      * @param eventId 事件 ID
      * @return requestId 预言机请求 ID
      * @dev TODO: Implement oracle submission logic
      */
     function requestOracleResult(
         uint256 eventId
-    ) external onlyVendor eventMustExist(eventId) returns (bytes32 requestId) {
+    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) returns (bytes32 requestId) {
         Event storage evt = events[eventId];
         require(evt.status == EventStatus.Active, "EventPod: event not active");
         require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
 
-        // TODO: Implement oracle submission logic
-        // Structure ready: Pod submits event data to oracle
-        // Oracle resolves externally and calls fulfillResult()
+        require(oracleAdapter != address(0), "EventPod: oracleAdapter not set");
 
-        // For now, just return empty bytes32
-        requestId = bytes32(0);
+        requestId = IOracle(oracleAdapter).requestEventResult(eventId, evt.description);
 
         // Store request mapping
         eventOracleRequests[eventId] = requestId;
@@ -143,7 +137,10 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @param eventId 事件 ID
      * @param newStatus 新状态
      */
-    function updateEventStatus(uint256 eventId, EventStatus newStatus) external onlyVendor eventMustExist(eventId) {
+    function updateEventStatus(
+        uint256 eventId,
+        EventStatus newStatus
+    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) {
         Event storage evt = events[eventId];
         EventStatus oldStatus = evt.status;
 
@@ -152,8 +149,10 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
 
         evt.status = newStatus;
 
-        // 如果变为非活跃状态,从活跃列表移除
-        if (newStatus == EventStatus.Settled || newStatus == EventStatus.Cancelled) {
+        // 活跃列表维护
+        if (newStatus == EventStatus.Active) {
+            _addToActiveList(eventId);
+        } else if (newStatus == EventStatus.Settled || newStatus == EventStatus.Cancelled) {
             _removeFromActiveList(eventId);
         }
 
@@ -216,12 +215,9 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         // 从活跃列表移除
         _removeFromActiveList(eventId);
 
-        // 通过 OrderBookManager 获取 vendor 的 OrderBookPod 并触发结算
-        address orderBookPodAddress = IOrderBookManager(orderBookManager).getVendorOrderBookPod(vendorId);
-        require(orderBookPodAddress != address(0), "EventPod: orderBookPod not found");
-
-        IOrderBookPod orderBookPod = IOrderBookPod(orderBookPodAddress);
-        orderBookPod.settleEvent(eventId, winningOutcomeIndex);
+        require(orderBookPod != address(0), "EventPod: orderBookPod not set");
+        IOrderBookPod orderBookPodInstance = IOrderBookPod(orderBookPod);
+        orderBookPodInstance.settleEvent(eventId, winningOutcomeIndex);
 
         emit EventSettled(eventId, winningOutcomeIndex, block.timestamp);
         emit OracleResultReceived(eventId, winningOutcomeIndex, msg.sender);
@@ -232,7 +228,10 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @param eventId 事件 ID
      * @param reason 取消原因
      */
-    function cancelEvent(uint256 eventId, string calldata reason) external onlyVendor eventMustExist(eventId) {
+    function cancelEvent(
+        uint256 eventId,
+        string calldata reason
+    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) {
         Event storage evt = events[eventId];
 
         require(
@@ -403,21 +402,32 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
     // ============ 管理功能 Admin Functions ============
 
     /**
-     * @notice 更新 OrderBookManager 地址
-     * @param _orderBookManager 新地址
+     * @notice 添加事件创建者
+     * @param creator 创建者地址
      */
-    function setOrderBookManager(address _orderBookManager) external onlyOwner {
-        require(_orderBookManager != address(0), "EventPod: invalid address");
-        orderBookManager = _orderBookManager;
+    function addEventCreator(address creator) external onlyOwner {
+        require(creator != address(0), "EventPod: invalid address");
+        isEventCreator[creator] = true;
+        emit EventCreatorAdded(creator);
     }
 
     /**
-     * @notice 更新 EventManager 地址
-     * @param _eventManager 新地址
+     * @notice 移除事件创建者
+     * @param creator 创建者地址
      */
-    function setEventManager(address _eventManager) external onlyOwner {
-        require(_eventManager != address(0), "EventPod: invalid address");
-        eventManager = _eventManager;
+    function removeEventCreator(address creator) external onlyOwner {
+        require(isEventCreator[creator], "EventPod: not an event creator");
+        isEventCreator[creator] = false;
+        emit EventCreatorRemoved(creator);
+    }
+
+    /**
+     * @notice 更新 OrderBookPod 地址
+     * @param _orderBookPod 新地址
+     */
+    function setOrderBookPod(address _orderBookPod) external onlyOwner {
+        require(_orderBookPod != address(0), "EventPod: invalid address");
+        orderBookPod = _orderBookPod;
     }
 
     /**

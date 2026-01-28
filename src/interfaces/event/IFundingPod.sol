@@ -84,15 +84,6 @@ interface IFundingPod {
     function deposit(address tokenAddress, uint256 amount) external payable;
 
     /**
-     * @notice 资金管理提现 (由 FundingManager 调用)
-     * @param user 用户地址
-     * @param tokenAddress Token 地址
-     * @param withdrawAddress 提现目标地址
-     * @param amount 金额
-     */
-    function withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 amount) external;
-
-    /**
      * @notice 用户直接 ETH 入金
      */
     function depositEth() external payable;
@@ -126,24 +117,6 @@ interface IFundingPod {
      * @param outcomeCount 结果数量
      */
     function registerEvent(uint256 eventId, uint8 outcomeCount) external;
-
-    /**
-     * @notice 铸造完整集合 (用户支付 amount USDT,获得所有结果各 amount 份 Long)
-     * @param user 用户地址
-     * @param eventId 事件 ID
-     * @param token Token 地址
-     * @param amount 铸造数量
-     */
-    function mintCompleteSet(address user, uint256 eventId, address token, uint256 amount) external;
-
-    /**
-     * @notice 销毁完整集合 (用户销毁所有结果各 amount 份 Long,获得 amount USDT)
-     * @param user 用户地址
-     * @param eventId 事件 ID
-     * @param token Token 地址
-     * @param amount 销毁数量
-     */
-    function burnCompleteSet(address user, uint256 eventId, address token, uint256 amount) external;
 
     /**
      * @notice 用户直接铸造完整集合

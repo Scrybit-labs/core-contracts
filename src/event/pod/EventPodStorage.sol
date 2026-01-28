@@ -26,20 +26,14 @@ abstract contract EventPodStorage is IEventPod {
     /// @notice 事件是否在活跃列表中
     mapping(uint256 => bool) internal isEventActive;
 
-    /// @notice EventManager 合约地址
-    address public eventManager;
-
-    /// @notice OrderBookManager 合约地址(用于触发结算)
-    address public orderBookManager;
+    /// @notice OrderBookPod 合约地址(用于触发结算)
+    address public orderBookPod;
 
     /// @notice OracleAdapter 合约地址(用于验证预言机)
     address public oracleAdapter;
 
-    /// @notice Vendor ID (set during initialization)
-    uint256 public vendorId;
-
-    /// @notice Vendor owner address
-    address public vendorAddress;
+    /// @notice 事件创建者白名单
+    mapping(address => bool) public isEventCreator;
 
     /// @notice Per-pod event counter
     uint256 public nextEventId;

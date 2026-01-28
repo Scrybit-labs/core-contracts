@@ -20,9 +20,6 @@ abstract contract OrderBookPodStorage is IOrderBookPod {
     /// @notice FeeVaultPod 合约地址
     address public feeVaultPod;
 
-    /// @notice OrderBookManager 合约地址
-    address public orderBookManager;
-
     // ============ 事件与结果管理 Event & Outcome Management ============
 
     /// @notice 支持的事件映射

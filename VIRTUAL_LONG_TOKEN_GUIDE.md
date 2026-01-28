@@ -23,7 +23,7 @@
 ### 3. 资金流
 
 ```
-USDT → mintCompleteSet() → Long Token → 订单簿交易 → 事件结算 → USDT
+USDT → mintCompleteSetDirect() → Long Token → 订单簿交易 → 事件结算 → USDT
 ```
 
 ---
@@ -33,11 +33,11 @@ USDT → mintCompleteSet() → Long Token → 订单簿交易 → 事件结算 �
 ### 步骤 1: 入金
 
 ```solidity
-// 批准 USDT 给 FundingManager
-IERC20(USDT).approve(address(fundingManager), 100 ether);
+// 批准 USDT 给 FundingPod
+IERC20(USDT).approve(address(fundingPod), 100 ether);
 
 // 入金到 FundingPod
-fundingManager.depositErc20IntoPod(fundingPod, USDT, 100 ether);
+fundingPod.depositErc20(IERC20(USDT), 100 ether);
 ```
 
 **结果**: userTokenBalances[user][USDT] = 100 ether
@@ -48,8 +48,7 @@ fundingManager.depositErc20IntoPod(fundingPod, USDT, 100 ether);
 
 ```solidity
 // 铸造 100 个完整集合
-fundingManager.mintCompleteSet(
-    fundingPod,
+fundingPod.mintCompleteSetDirect(
     eventId,      // 事件 ID
     USDT,         // Token 地址
     100 ether     // 数量
@@ -71,7 +70,7 @@ fundingManager.mintCompleteSet(
 
 ```solidity
 // 卖出 100 份 "法国" Long @ 0.2
-orderBookManager.placeOrder(
+orderBookPod.placeOrder(
     eventId,
     法国OutcomeId,
     IOrderBookPod.OrderSide.Sell,
@@ -89,7 +88,7 @@ orderBookManager.placeOrder(
 
 ```solidity
 // 买入 100 份 "法国" Long @ 0.2
-orderBookManager.placeOrder(
+orderBookPod.placeOrder(
     eventId,
     法国OutcomeId,
     IOrderBookPod.OrderSide.Buy,
@@ -114,7 +113,7 @@ orderBookManager.placeOrder(
 卖家获得: 20 USDT
 买家获得: 100 法国Long
 卖家失去: 100 法国Long
-奖金池增加: 100 (完整集合价值)
+奖金池不变（仅 USDT 与 Long 交换）
 ```
 
 ---
@@ -123,27 +122,13 @@ orderBookManager.placeOrder(
 
 ```solidity
 // 查询用户 USDT 余额
-uint256 balance = fundingManager.getUserBalance(
-    fundingPod,
-    userAddress,
-    USDT
-);
+uint256 balance = fundingPod.getUserBalance(userAddress, USDT);
 
 // 查询用户 Long Token 持仓
-uint256 longPosition = fundingManager.getLongPosition(
-    fundingPod,
-    userAddress,
-    USDT,
-    eventId,
-    法国OutcomeId
-);
+uint256 longPosition = fundingPod.getLongPosition(userAddress, USDT, eventId, 法国OutcomeId);
 
 // 查询事件奖金池
-uint256 prizePool = fundingManager.getEventPrizePool(
-    fundingPod,
-    eventId,
-    USDT
-);
+uint256 prizePool = fundingPod.getEventPrizePool(eventId, USDT);
 ```
 
 ---
@@ -152,7 +137,7 @@ uint256 prizePool = fundingManager.getEventPrizePool(
 
 ```solidity
 // 预言机提交结果
-eventPod.fulfillResult(requestId, eventId, 法国OutcomeId, merkleProof);
+oracleAdapter.submitResult(requestId, eventId, 法国OutcomeId, merkleProof);
 
 // FundingPod 自动结算
 // 持有 "法国" Long 的用户按比例分配奖金池
@@ -170,12 +155,7 @@ reward = (prizePool * userLongPosition) / totalWinningLongPositions
 如果用户持有完整集合 (所有结果各 N 份)，可以销毁换回 USDT:
 
 ```solidity
-fundingManager.burnCompleteSet(
-    fundingPod,
-    eventId,
-    USDT,
-    100 ether
-);
+fundingPod.burnCompleteSetDirect(eventId, USDT, 100 ether);
 ```
 
 **结果**:
@@ -195,14 +175,14 @@ fundingManager.burnCompleteSet(
 // ===== Alice 操作 =====
 
 // 1. 入金 100 USDT
-fundingManager.depositErc20IntoPod(fundingPod, USDT, 100 ether);
+fundingPod.depositErc20(IERC20(USDT), 100 ether);
 
 // 2. 铸造完整集合
-fundingManager.mintCompleteSet(fundingPod, worldCupEventId, USDT, 100 ether);
+fundingPod.mintCompleteSetDirect(worldCupEventId, USDT, 100 ether);
 // 获得: 阿根廷 100, 巴西 100, 法国 100, 德国 100
 
 // 3. 卖出不看好的队伍
-orderBookManager.placeOrder(
+orderBookPod.placeOrder(
     worldCupEventId,
     法国OutcomeId,
     Sell,
@@ -210,7 +190,7 @@ orderBookManager.placeOrder(
     100 ether,
     USDT
 );
-orderBookManager.placeOrder(
+orderBookPod.placeOrder(
     worldCupEventId,
     德国OutcomeId,
     Sell,
@@ -223,10 +203,10 @@ orderBookManager.placeOrder(
 // ===== Bob 操作 =====
 
 // 1. 入金 100 USDT
-fundingManager.depositErc20IntoPod(fundingPod, USDT, 100 ether);
+fundingPod.depositErc20(IERC20(USDT), 100 ether);
 
 // 2. 买入 "法国"
-orderBookManager.placeOrder(
+orderBookPod.placeOrder(
     worldCupEventId,
     法国OutcomeId,
     Buy,
@@ -241,10 +221,10 @@ orderBookManager.placeOrder(
 // ===== Charlie 操作 =====
 
 // 1. 入金 100 USDT
-fundingManager.depositErc20IntoPod(fundingPod, USDT, 100 ether);
+fundingPod.depositErc20(IERC20(USDT), 100 ether);
 
 // 2. 买入 "德国"
-orderBookManager.placeOrder(
+orderBookPod.placeOrder(
     worldCupEventId,
     德国OutcomeId,
     Buy,
@@ -285,18 +265,18 @@ eventPod.fulfillResult(requestId, worldCupEventId, 法国OutcomeId, proof);
 
 ## 🔍 关键函数参考
 
-### FundingManager
+### FundingPod
 
 | 函数 | 功能 | Gas |
 |------|------|-----|
-| depositErc20IntoPod() | ERC20 入金 | 低 |
-| withdrawFromPod() | 提现 | 低 |
-| mintCompleteSet() | 铸造完整集合 | 中等 |
-| burnCompleteSet() | 销毁完整集合 | 中等 |
+| depositErc20() | ERC20 入金 | 低 |
+| withdrawDirect() | 提现 | 低 |
+| mintCompleteSetDirect() | 铸造完整集合 | 中等 |
+| burnCompleteSetDirect() | 销毁完整集合 | 中等 |
 | getUserBalance() | 查询余额 | 0 |
 | getLongPosition() | 查询持仓 | 0 |
 
-### OrderBookManager
+### OrderBookPod
 
 | 函数 | 功能 | Gas |
 |------|------|-----|
@@ -336,9 +316,10 @@ eventPod.fulfillResult(requestId, worldCupEventId, 法国OutcomeId, proof);
 
 ### 3. 奖金池计算
 
-奖金池只在撮合时增加:
+奖金池只在铸造/销毁完整集合时变化:
 ```
-奖金池 = Σ 所有撮合的 matchAmount
+mintCompleteSet: 奖金池 += amount
+burnCompleteSet: 奖金池 -= amount
 ```
 
 ### 4. 事件结算
@@ -352,14 +333,14 @@ reward = (prizePool * userLongPosition) / totalWinningLongPositions
 
 ## 🔧 故障排查
 
-### 问题 1: mintCompleteSet 失败
+### 问题 1: mintCompleteSetDirect 失败
 
 **原因**: 余额不足
 ```
 Error: InsufficientBalance(user, token, amount, availableBalance)
 ```
 
-**解决**: 先调用 depositErc20IntoPod() 入金
+**解决**: 先调用 depositErc20() 入金
 
 ---
 
@@ -370,11 +351,11 @@ Error: InsufficientBalance(user, token, amount, availableBalance)
 Error: InsufficientLongPosition(user, token, eventId, outcomeId)
 ```
 
-**解决**: 先调用 mintCompleteSet() 或从买单中获得 Long
+**解决**: 先调用 mintCompleteSetDirect() 或从买单中获得 Long
 
 ---
 
-### 问题 3: burnCompleteSet 失败
+### 问题 3: burnCompleteSetDirect 失败
 
 **原因**: 不持有完整集合
 ```

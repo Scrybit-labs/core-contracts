@@ -18,33 +18,9 @@ interface IFeeVaultPod {
     /// @notice 手续费率更新事件
     event FeeRateUpdated(string indexed feeType, uint256 oldRate, uint256 newRate);
 
-    /// @notice 手续费接收者更新事件
-    event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
-
-    /// @notice 手续费转账到 AdminFeeVault 事件
-    event FeeTransferredToAdmin(
-        address indexed token,
-        uint256 amount,
-        string category
-    );
-
-    /// @notice AdminFeeVault 地址更新事件
-    event AdminFeeVaultUpdated(
-        address indexed oldVault,
-        address indexed newVault
-    );
-
-    /// @notice 转账阈值更新事件
-    event TransferThresholdUpdated(
-        address indexed token,
-        uint256 oldThreshold,
-        uint256 newThreshold
-    );
-
     // ============ 错误 Errors ============
 
     error InvalidFeeRate(uint256 rate);
-    error InvalidRecipient(address recipient);
     error InsufficientFeeBalance(address token, uint256 requested, uint256 available);
     error InvalidAmount(uint256 amount);
 
@@ -69,10 +45,9 @@ interface IFeeVaultPod {
     /**
      * @notice 提取手续费
      * @param token Token 地址
-     * @param recipient 接收者地址
      * @param amount 提取金额
      */
-    function withdrawFee(address token, address recipient, uint256 amount) external;
+    function withdrawFee(address token, uint256 amount) external;
 
     /**
      * @notice 设置手续费率
@@ -80,25 +55,6 @@ interface IFeeVaultPod {
      * @param rate 费率(基点, 1-10000)
      */
     function setFeeRate(string calldata feeType, uint256 rate) external;
-
-    /**
-     * @notice 设置手续费接收者
-     * @param recipient 接收者地址
-     */
-    function setFeeRecipient(address recipient) external;
-
-    /**
-     * @notice 设置 AdminFeeVault 地址
-     * @param vault AdminFeeVault 合约地址
-     */
-    function setAdminFeeVault(address vault) external;
-
-    /**
-     * @notice 设置自动转账阈值
-     * @param token Token 地址
-     * @param threshold 阈值金额
-     */
-    function setTransferThreshold(address token, uint256 threshold) external;
 
     // ============ 查询功能 View Functions ============
 
@@ -115,12 +71,6 @@ interface IFeeVaultPod {
      * @return rate 费率(基点)
      */
     function getFeeRate(string calldata feeType) external view returns (uint256 rate);
-
-    /**
-     * @notice 获取手续费接收者
-     * @return recipient 接收者地址
-     */
-    function getFeeRecipient() external view returns (address recipient);
 
     /**
      * @notice 计算手续费

@@ -4,19 +4,6 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 
 /**
- * @title FeeConfig
- * @notice Configuration for fee distribution
- */
-struct FeeConfig {
-    address treasuryRecipient;
-    address teamRecipient;
-    address liquidityRecipient;
-    uint256 treasuryRatio;
-    uint256 teamRatio;
-    uint256 liquidityRatio;
-}
-
-/**
  * @title NetworkConfig
  * @notice Network-specific deployment configuration
  */
@@ -26,7 +13,6 @@ struct NetworkConfig {
     uint256 requestTimeout;
     uint256 minConfirmations;
     address[] initialOracles;
-    FeeConfig feeConfig;
 }
 
 /**
@@ -79,15 +65,7 @@ contract DeploymentConfig is Script {
             initialOwner: deployer,
             requestTimeout: 1 hours,
             minConfirmations: 1,
-            initialOracles: oracles,
-            feeConfig: FeeConfig({
-                treasuryRecipient: deployer,
-                teamRecipient: deployer,
-                liquidityRecipient: deployer,
-                treasuryRatio: 5000,
-                teamRatio: 3000,
-                liquidityRatio: 2000
-            })
+            initialOracles: oracles
         });
     }
 
@@ -97,10 +75,6 @@ contract DeploymentConfig is Script {
     function getSepoliaConfig() internal view returns (NetworkConfig memory) {
         // Load from environment variables
         address owner = vm.envOr("INITIAL_OWNER", msg.sender);
-        address treasury = vm.envOr("TREASURY_RECIPIENT", msg.sender);
-        address team = vm.envOr("TEAM_RECIPIENT", msg.sender);
-        address liquidity = vm.envOr("LIQUIDITY_RECIPIENT", msg.sender);
-
         // Load oracle address if provided
         address[] memory oracles;
         try vm.envAddress("ORACLE_ADDRESS") returns (address oracleAddr) {
@@ -115,15 +89,7 @@ contract DeploymentConfig is Script {
             initialOwner: owner,
             requestTimeout: 1 hours,
             minConfirmations: 1,
-            initialOracles: oracles,
-            feeConfig: FeeConfig({
-                treasuryRecipient: treasury,
-                teamRecipient: team,
-                liquidityRecipient: liquidity,
-                treasuryRatio: 5000,
-                teamRatio: 3000,
-                liquidityRatio: 2000
-            })
+            initialOracles: oracles
         });
     }
 
@@ -141,10 +107,6 @@ contract DeploymentConfig is Script {
     function getArbitrumSepoliaConfig() internal view returns (NetworkConfig memory) {
         // Load from environment variables (same pattern as Sepolia)
         address owner = vm.envOr("INITIAL_OWNER", msg.sender);
-        address treasury = vm.envOr("TREASURY_RECIPIENT", msg.sender);
-        address team = vm.envOr("TEAM_RECIPIENT", msg.sender);
-        address liquidity = vm.envOr("LIQUIDITY_RECIPIENT", msg.sender);
-
         // Load oracle address if provided
         address[] memory oracles;
         try vm.envAddress("ORACLE_ADDRESS") returns (address oracleAddr) {
@@ -159,15 +121,7 @@ contract DeploymentConfig is Script {
             initialOwner: owner,
             requestTimeout: 1 hours,
             minConfirmations: 1,
-            initialOracles: oracles,
-            feeConfig: FeeConfig({
-                treasuryRecipient: treasury,
-                teamRecipient: team,
-                liquidityRecipient: liquidity,
-                treasuryRatio: 5000,
-                teamRatio: 3000,
-                liquidityRatio: 2000
-            })
+            initialOracles: oracles
         });
     }
 
@@ -177,10 +131,6 @@ contract DeploymentConfig is Script {
     function getOptimismSepoliaConfig() internal view returns (NetworkConfig memory) {
         // Load from environment variables (same pattern as Sepolia)
         address owner = vm.envOr("INITIAL_OWNER", msg.sender);
-        address treasury = vm.envOr("TREASURY_RECIPIENT", msg.sender);
-        address team = vm.envOr("TEAM_RECIPIENT", msg.sender);
-        address liquidity = vm.envOr("LIQUIDITY_RECIPIENT", msg.sender);
-
         // Load oracle address if provided
         address[] memory oracles;
         try vm.envAddress("ORACLE_ADDRESS") returns (address oracleAddr) {
@@ -195,15 +145,7 @@ contract DeploymentConfig is Script {
             initialOwner: owner,
             requestTimeout: 1 hours,
             minConfirmations: 1,
-            initialOracles: oracles,
-            feeConfig: FeeConfig({
-                treasuryRecipient: treasury,
-                teamRecipient: team,
-                liquidityRecipient: liquidity,
-                treasuryRatio: 5000,
-                teamRatio: 3000,
-                liquidityRatio: 2000
-            })
+            initialOracles: oracles
         });
     }
 
@@ -213,10 +155,6 @@ contract DeploymentConfig is Script {
     function getRoothashConfig() internal view returns (NetworkConfig memory) {
         // Load from environment variables (same pattern as Sepolia)
         address owner = vm.envOr("INITIAL_OWNER", msg.sender);
-        address treasury = vm.envOr("TREASURY_RECIPIENT", msg.sender);
-        address team = vm.envOr("TEAM_RECIPIENT", msg.sender);
-        address liquidity = vm.envOr("LIQUIDITY_RECIPIENT", msg.sender);
-
         // Load oracle address if provided
         address[] memory oracles;
         try vm.envAddress("ORACLE_ADDRESS") returns (address oracleAddr) {
@@ -231,25 +169,13 @@ contract DeploymentConfig is Script {
             initialOwner: owner,
             requestTimeout: 1 hours,
             minConfirmations: 1,
-            initialOracles: oracles,
-            feeConfig: FeeConfig({
-                treasuryRecipient: treasury,
-                teamRecipient: team,
-                liquidityRecipient: liquidity,
-                treasuryRatio: 5000,
-                teamRatio: 3000,
-                liquidityRatio: 2000
-            })
+            initialOracles: oracles
         });
     }
 
     function getHashkeyConfig() internal view returns (NetworkConfig memory) {
         // Load from environment variables (same pattern as Sepolia)
         address owner = vm.envOr("INITIAL_OWNER", msg.sender);
-        address treasury = vm.envOr("TREASURY_RECIPIENT", msg.sender);
-        address team = vm.envOr("TEAM_RECIPIENT", msg.sender);
-        address liquidity = vm.envOr("LIQUIDITY_RECIPIENT", msg.sender);
-
         // Load oracle address if provided
         address[] memory oracles;
         try vm.envAddress("ORACLE_ADDRESS") returns (address oracleAddr) {
@@ -264,15 +190,7 @@ contract DeploymentConfig is Script {
             initialOwner: owner,
             requestTimeout: 1 hours,
             minConfirmations: 1,
-            initialOracles: oracles,
-            feeConfig: FeeConfig({
-                treasuryRecipient: treasury,
-                teamRecipient: team,
-                liquidityRecipient: liquidity,
-                treasuryRatio: 5000,
-                teamRatio: 3000,
-                liquidityRatio: 2000
-            })
+            initialOracles: oracles
         });
     }
 }

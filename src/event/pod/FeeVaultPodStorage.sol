@@ -11,16 +11,10 @@ import "../../interfaces/event/IFeeVaultPod.sol";
 abstract contract FeeVaultPodStorage is IFeeVaultPod {
     // ============ 合约地址 Contract Addresses ============
 
-    /// @notice FeeVaultManager 合约地址
-    address public feeVaultManager;
-
     /// @notice OrderBookPod 合约地址
     address public orderBookPod;
 
     // ============ 手续费配置 Fee Configuration ============
-
-    /// @notice 手续费接收者
-    address public feeRecipient;
 
     /// @notice 手续费率映射: feeType => rate (basis points)
     /// @dev 例如: feeRates["trade"] = 30 表示 0.3% 交易手续费
@@ -50,15 +44,6 @@ abstract contract FeeVaultPodStorage is IFeeVaultPod {
 
     /// @notice 用户支付的手续费: user => token => amount
     mapping(address => mapping(address => uint256)) public userPaidFees;
-
-    // ============ AdminFeeVault 集成 AdminFeeVault Integration ============
-
-    /// @notice AdminFeeVault 合约地址
-    address public adminFeeVault;
-
-    /// @notice 自动转账阈值: token => threshold
-    /// @dev 当 feeBalances[token] >= transferThreshold[token] 时自动转账到 AdminFeeVault
-    mapping(address => uint256) public transferThreshold;
 
     // ============ 常量 Constants ============
 

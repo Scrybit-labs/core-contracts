@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "./PodBase.sol";
 import "./OrderBookPodStorage.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
+import "../../interfaces/event/IEventPod.sol";
 import "../../interfaces/event/IFundingPod.sol";
 import "../../interfaces/event/IFeeVaultPod.sol";
 
@@ -30,15 +31,13 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         address initialOwner,
         address _eventPod,
         address _fundingPod,
-        address _feeVaultPod,
-        address _orderBookManager
+        address _feeVaultPod
     ) public initializer {
         _initializeOwner(initialOwner);
         _initializePausable();
         eventPod = _eventPod;
         fundingPod = _fundingPod;
         feeVaultPod = _feeVaultPod;
-        orderBookManager = _orderBookManager;
         nextOrderId = 1; // Start from 1
     }
 
@@ -191,7 +190,11 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
 
     function addEvent(uint256 eventId, uint8 outcomeCount) external {
         require(!supportedEvents[eventId], "OrderBookPod: event exists");
+
+        IEventPod.Event memory evt = IEventPod(eventPod).getEvent(eventId);
+        require(evt.status == IEventPod.EventStatus.Active, "OrderBookPod: event not active");
         require(outcomeCount > 0 && outcomeCount <= 32, "OrderBookPod: invalid outcomeCount");
+        require(outcomeCount == evt.outcomes.length, "OrderBookPod: outcomeCount mismatch");
         supportedEvents[eventId] = true;
 
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
