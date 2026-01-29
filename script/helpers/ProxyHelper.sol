@@ -15,10 +15,7 @@ contract ProxyHelper is Script {
      * @param initData Encoded initialization call data
      * @return proxy Address of the deployed proxy
      */
-    function deployProxy(address implementation, bytes memory initData)
-        internal
-        returns (address proxy)
-    {
+    function deployProxy(address implementation, bytes memory initData) internal returns (address proxy) {
         ERC1967Proxy proxyContract = new ERC1967Proxy(implementation, initData);
         return address(proxyContract);
     }

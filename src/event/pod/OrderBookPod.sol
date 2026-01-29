@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "./PodBase.sol";
-import "./OrderBookPodStorage.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 import "../../interfaces/event/IOrderBookPod.sol";
 import "../../interfaces/event/IEventPod.sol";
 import "../../interfaces/event/IFundingPod.sol";
@@ -13,13 +17,100 @@ import "../../interfaces/event/IFeeVaultPod.sol";
  * @notice 订单簿 Pod - 负责订单撮合和持仓管理
  * @dev 集成 FundingPod 进行资金管理
  */
-contract OrderBookPod is PodBase, OrderBookPodStorage {
+contract OrderBookPod is
+    Initializable,
+    OwnableUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    IOrderBookPod
+{
     // ============ Modifiers ============
 
     modifier onlyEventPod() {
         require(msg.sender == eventPod, "OrderBookPod: only eventPod");
         _;
     }
+
+    // ============ 合约地址 Contract Addresses ============
+
+    /// @notice EventPod 合约地址
+    address public eventPod;
+
+    /// @notice FundingPod 合约地址
+    address public fundingPod;
+
+    /// @notice FeeVaultPod 合约地址
+    address public feeVaultPod;
+
+    // ============ 事件与结果管理 Event & Outcome Management ============
+
+    /// @notice 支持的事件映射
+    mapping(uint256 => bool) public supportedEvents;
+
+    /// @notice 支持的结果映射: eventId => outcomeIndex => isSupported
+    mapping(uint256 => mapping(uint8 => bool)) public supportedOutcomes;
+
+    // ============ 订单管理 Order Management ============
+
+    /// @notice 下一个订单 ID
+    uint256 public nextOrderId;
+
+    /// @notice 订单映射: orderId => Order
+    mapping(uint256 => Order) public orders;
+
+    /// @notice 用户订单列表: user => orderIds[]
+    mapping(address => uint256[]) public userOrders;
+
+    // ============ 订单簿结构 Order Book Structure ============
+
+    /// @notice 结果订单簿(买单和卖单按价格分组)
+    struct OutcomeOrderBook {
+        mapping(uint256 => uint256[]) buyOrdersByPrice; // price => orderIds[]
+        uint256[] buyPriceLevels; // 买单价格档位(降序)
+        mapping(uint256 => uint256[]) sellOrdersByPrice; // price => orderIds[]
+        uint256[] sellPriceLevels; // 卖单价格档位(升序)
+    }
+
+    /// @notice 事件订单簿(每个结果一个订单簿)
+    struct EventOrderBook {
+        mapping(uint8 => OutcomeOrderBook) outcomeOrderBooks;
+        uint8 outcomeCount;
+    }
+
+    /// @notice 事件订单簿映射: eventId => EventOrderBook
+    mapping(uint256 => EventOrderBook) internal eventOrderBooks;
+
+    // ============ 持仓管理 Position Management ============
+
+    /// @notice 用户持仓: eventId => outcomeIndex => user => position
+    mapping(uint256 => mapping(uint8 => mapping(address => uint256))) public positions;
+
+    /// @notice 事件的所有持仓用户: eventId => outcomeIndex => users[]
+    /// @dev 用于事件结算时遍历所有获胜者
+    mapping(uint256 => mapping(uint8 => address[])) internal positionHolders;
+
+    /// @notice 用户是否已记录为持仓者: eventId => outcomeIndex => user => isRecorded
+    mapping(uint256 => mapping(uint8 => mapping(address => bool))) internal isPositionHolder;
+
+    // ============ 常量 Constants ============
+
+    /// @notice 价格精度(最小变动单位)
+    uint256 public constant TICK_SIZE = 10;
+
+    /// @notice 最大价格(基点)
+    uint256 public constant MAX_PRICE = 10000;
+
+    // ============ 事件结算 Event Settlement ============
+
+    /// @notice 事件结算状态: eventId => settled
+    mapping(uint256 => bool) public eventSettled;
+
+    /// @notice 事件结果: eventId => winningOutcomeIndex
+    mapping(uint256 => uint8) public eventResults;
+
+    // ===== Upgradeable storage gap =====
+    uint256[36] private __gap;
 
     // ============ Constructor & Initializer ============
 
@@ -33,13 +124,19 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         address _fundingPod,
         address _feeVaultPod
     ) public initializer {
-        _initializeOwner(initialOwner);
-        _initializePausable();
+        __Ownable_init(initialOwner);
+        __Pausable_init();
         eventPod = _eventPod;
         fundingPod = _fundingPod;
         feeVaultPod = _feeVaultPod;
         nextOrderId = 1; // Start from 1
     }
+
+    /**
+     * @notice Authorizes upgrade to new implementation
+     * @dev Only owner can upgrade (UUPS pattern)
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ 外部函数 External Functions ============
 
@@ -60,7 +157,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         uint256 price,
         uint256 amount,
         address tokenAddress
-    ) external whenNotPaused returns (uint256 orderId) {
+    ) external whenNotPaused nonReentrant returns (uint256 orderId) {
         address user = msg.sender; // Direct caller
 
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
@@ -85,27 +182,25 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         // 卖单锁定 Long Token (包含手续费): amount + fee
         uint256 requiredAmount = side == OrderSide.Buy ? ((amount + fee) * price) / MAX_PRICE : (amount + fee);
 
-        IFundingPod(fundingPod)
-            .lockForOrder(
-                user, // 用户地址
-                nextOrderId, // 订单 ID
-                tokenAddress, // Token 地址
-                side == OrderSide.Buy, // 是否为买单
-                requiredAmount, // 锁定数量
-                eventId, // 事件 ID
-                outcomeIndex // 结果索引
-            );
+        IFundingPod(fundingPod).lockForOrder(
+            user, // 用户地址
+            nextOrderId, // 订单 ID
+            tokenAddress, // Token 地址
+            side == OrderSide.Buy, // 是否为买单
+            requiredAmount, // 锁定数量
+            eventId, // 事件 ID
+            outcomeIndex // 结果索引
+        );
 
         // 收取手续费
         if (fee > 0 && feeVaultPod != address(0)) {
-            IFeeVaultPod(feeVaultPod)
-                .collectFee(
-                    tokenAddress,
-                    user, // 使用传入的真实用户地址
-                    fee,
-                    eventId,
-                    "trade"
-                );
+            IFeeVaultPod(feeVaultPod).collectFee(
+                tokenAddress,
+                user, // 使用传入的真实用户地址
+                fee,
+                eventId,
+                "trade"
+            );
         }
 
         orderId = nextOrderId++;
@@ -135,14 +230,14 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
             orderId,
             user, // 使用传入的真实用户地址
             eventId,
-                outcomeIndex,
-                side,
-                price,
-                amount
+            outcomeIndex,
+            side,
+            price,
+            amount
         );
     }
 
-    function cancelOrder(uint256 orderId) external {
+    function cancelOrder(uint256 orderId) external nonReentrant {
         Order storage order = orders[orderId];
 
         if (eventSettled[order.eventId]) {
@@ -158,21 +253,20 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
 
         if (order.remainingAmount > 0) {
             // 集成 FundingPod: 解锁剩余未成交资金或 Long Token
-            IFundingPod(fundingPod)
-                .unlockForOrder(
-                    order.user,
-                    orderId,
-                    order.tokenAddress,
-                    order.side == OrderSide.Buy, // 是否为买单
-                    order.eventId,
-                    order.outcomeIndex
-                );
+            IFundingPod(fundingPod).unlockForOrder(
+                order.user,
+                orderId,
+                order.tokenAddress,
+                order.side == OrderSide.Buy, // 是否为买单
+                order.eventId,
+                order.outcomeIndex
+            );
         }
 
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
     }
 
-    function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventPod {
+    function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventPod nonReentrant {
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
         if (!supportedOutcomes[eventId][winningOutcomeIndex]) {
@@ -188,7 +282,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         emit EventSettled(eventId, winningOutcomeIndex);
     }
 
-    function addEvent(uint256 eventId, uint8 outcomeCount) external {
+    function addEvent(uint256 eventId, uint8 outcomeCount) external nonReentrant {
         require(!supportedEvents[eventId], "OrderBookPod: event exists");
 
         IEventPod.Event memory evt = IEventPod(eventPod).getEvent(eventId);
@@ -209,10 +303,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         emit EventAdded(eventId, outcomeCount);
     }
 
-    function getBestBid(
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256 price, uint256 amount) {
+    function getBestBid(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount) {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
         OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeIndex];
 
@@ -222,10 +313,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         }
     }
 
-    function getBestAsk(
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256 price, uint256 amount) {
+    function getBestAsk(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount) {
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
         OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeIndex];
 
@@ -300,8 +388,9 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         Order storage buyOrder = orders[buyOrderId];
         Order storage sellOrder = orders[sellOrderId];
 
-        uint256 matchAmount =
-            buyOrder.remainingAmount < sellOrder.remainingAmount ? buyOrder.remainingAmount : sellOrder.remainingAmount;
+        uint256 matchAmount = buyOrder.remainingAmount < sellOrder.remainingAmount
+            ? buyOrder.remainingAmount
+            : sellOrder.remainingAmount;
 
         uint256 matchPrice = sellOrder.price;
 
@@ -328,18 +417,17 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
         }
 
         // 集成 FundingPod: 资金结算 (虚拟 Long Token 模型)
-        IFundingPod(fundingPod)
-            .settleMatchedOrder(
-                buyOrderId, // 买单 ID
-                sellOrderId, // 卖单 ID
-                buyOrder.user, // 买家地址
-                sellOrder.user, // 卖家地址
-                buyOrder.tokenAddress, // Token 地址
-                matchAmount, // 成交数量
-                matchPrice, // 成交价格
-                buyOrder.eventId, // 事件 ID
-                buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
-            );
+        IFundingPod(fundingPod).settleMatchedOrder(
+            buyOrderId, // 买单 ID
+            sellOrderId, // 卖单 ID
+            buyOrder.user, // 买家地址
+            sellOrder.user, // 卖家地址
+            buyOrder.tokenAddress, // Token 地址
+            matchAmount, // 成交数量
+            matchPrice, // 成交价格
+            buyOrder.eventId, // 事件 ID
+            buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
+        );
 
         // ✅ 收取撮合手续费
         if (matchFee > 0 && feeVaultPod != address(0)) {
@@ -348,13 +436,23 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
             uint256 sellerFee = matchFee - buyerFee;
 
             if (buyerFee > 0) {
-                IFeeVaultPod(feeVaultPod)
-                    .collectFee(buyOrder.tokenAddress, buyOrder.user, buyerFee, buyOrder.eventId, "trade");
+                IFeeVaultPod(feeVaultPod).collectFee(
+                    buyOrder.tokenAddress,
+                    buyOrder.user,
+                    buyerFee,
+                    buyOrder.eventId,
+                    "trade"
+                );
             }
 
             if (sellerFee > 0) {
-                IFeeVaultPod(feeVaultPod)
-                    .collectFee(sellOrder.tokenAddress, sellOrder.user, sellerFee, sellOrder.eventId, "trade");
+                IFeeVaultPod(feeVaultPod).collectFee(
+                    sellOrder.tokenAddress,
+                    sellOrder.user,
+                    sellerFee,
+                    sellOrder.eventId,
+                    "trade"
+                );
             }
         }
 
@@ -510,15 +608,14 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
 
                     // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingPod(fundingPod)
-                            .unlockForOrder(
-                                order.user,
-                                ids[j], // orderId
-                                order.tokenAddress,
-                                order.side == OrderSide.Buy, // 是否为买单
-                                order.eventId,
-                                order.outcomeIndex
-                            );
+                        IFundingPod(fundingPod).unlockForOrder(
+                            order.user,
+                            ids[j], // orderId
+                            order.tokenAddress,
+                            order.side == OrderSide.Buy, // 是否为买单
+                            order.eventId,
+                            order.outcomeIndex
+                        );
                     }
                 }
             }
@@ -534,15 +631,14 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
 
                     // 集成 FundingPod: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingPod(fundingPod)
-                            .unlockForOrder(
-                                order.user,
-                                ids[j], // orderId
-                                order.tokenAddress,
-                                order.side == OrderSide.Buy, // 是否为买单
-                                order.eventId,
-                                order.outcomeIndex
-                            );
+                        IFundingPod(fundingPod).unlockForOrder(
+                            order.user,
+                            ids[j], // orderId
+                            order.tokenAddress,
+                            order.side == OrderSide.Buy, // 是否为买单
+                            order.eventId,
+                            order.outcomeIndex
+                        );
                     }
                 }
             }
@@ -614,11 +710,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
      * @param user 用户地址
      * @return position 持仓数量
      */
-    function getPosition(
-        uint256 eventId,
-        uint8 outcomeIndex,
-        address user
-    ) external view returns (uint256 position) {
+    function getPosition(uint256 eventId, uint8 outcomeIndex, address user) external view returns (uint256 position) {
         return positions[eventId][outcomeIndex][user];
     }
 
@@ -628,7 +720,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
      * @notice 设置 FundingPod 地址
      * @param _fundingPod FundingPod 地址
      */
-    function setFundingPod(address _fundingPod) external onlyOwner {
+    function setFundingPod(address _fundingPod) external onlyOwner nonReentrant {
         require(_fundingPod != address(0), "OrderBookPod: invalid address");
         fundingPod = _fundingPod;
     }
@@ -637,7 +729,7 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
      * @notice 设置 FeeVaultPod 地址
      * @param _feeVaultPod FeeVaultPod 地址
      */
-    function setFeeVaultPod(address _feeVaultPod) external onlyOwner {
+    function setFeeVaultPod(address _feeVaultPod) external onlyOwner nonReentrant {
         require(_feeVaultPod != address(0), "OrderBookPod: invalid address");
         feeVaultPod = _feeVaultPod;
     }
@@ -645,14 +737,14 @@ contract OrderBookPod is PodBase, OrderBookPodStorage {
     /**
      * @notice 暂停合约
      */
-    function pause() external onlyOwner {
+    function pause() external onlyOwner nonReentrant {
         _pause();
     }
 
     /**
      * @notice 恢复合约
      */
-    function unpause() external onlyOwner {
+    function unpause() external onlyOwner nonReentrant {
         _unpause();
     }
 }

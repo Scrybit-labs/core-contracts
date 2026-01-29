@@ -90,15 +90,9 @@ interface IOrderBookPod {
 
     function addEvent(uint256 eventId, uint8 outcomeCount) external;
 
-    function getBestBid(
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256 price, uint256 amount);
+    function getBestBid(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount);
 
-    function getBestAsk(
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256 price, uint256 amount);
+    function getBestAsk(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount);
 
     /**
      * @notice 获取订单信息
@@ -114,11 +108,7 @@ interface IOrderBookPod {
      * @param user 用户地址
      * @return position 持仓数量
      */
-    function getPosition(
-        uint256 eventId,
-        uint8 outcomeIndex,
-        address user
-    ) external view returns (uint256 position);
+    function getPosition(uint256 eventId, uint8 outcomeIndex, address user) external view returns (uint256 position);
 
     /**
      * @notice 设置 FundingPod 地址

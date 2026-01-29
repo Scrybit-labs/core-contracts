@@ -25,6 +25,3 @@ AGENTS.md
 node_modules/
 .yarn/
 .yarnrc.yml
-.prettierrc
-package.json
-yarn.lock

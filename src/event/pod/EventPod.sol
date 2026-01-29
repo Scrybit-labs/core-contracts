@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "./PodBase.sol";
-import "./EventPodStorage.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 import "../../interfaces/event/IEventPod.sol";
 import "../../interfaces/event/IOrderBookPod.sol";
 import "../../interfaces/oracle/IOracle.sol";
@@ -12,7 +16,15 @@ import "../../interfaces/oracle/IOracle.sol";
  * @notice 事件 Pod - 负责独立处理一组事件的执行单元
  * @dev 每个 EventPod 独立管理一组事件,实现事件隔离和横向扩展
  */
-contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
+contract EventPod is
+    Initializable,
+    OwnableUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    IEventPod,
+    IOracleConsumer
+{
     // ============ Modifiers ============
 
     /// @notice 仅事件创建者或所有者可调用
@@ -39,6 +51,41 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         _;
     }
 
+    // ============ 状态变量 State Variables ============
+
+    /// @notice 事件存储映射: eventId => Event
+    mapping(uint256 => Event) internal events;
+
+    /// @notice 事件是否存在映射
+    mapping(uint256 => bool) public eventExists;
+
+    /// @notice 活跃事件 ID 数组
+    uint256[] internal activeEventIds;
+
+    /// @notice 事件在活跃数组中的索引映射
+    mapping(uint256 => uint256) internal activeEventIndex;
+
+    /// @notice 事件是否在活跃列表中
+    mapping(uint256 => bool) internal isEventActive;
+
+    /// @notice OrderBookPod 合约地址(用于触发结算)
+    address public orderBookPod;
+
+    /// @notice OracleAdapter 合约地址(用于验证预言机)
+    address public oracleAdapter;
+
+    /// @notice 事件创建者白名单
+    mapping(address => bool) public isEventCreator;
+
+    /// @notice Per-pod event counter
+    uint256 public nextEventId;
+
+    /// @notice Event oracle request tracking: eventId => requestId
+    mapping(uint256 => bytes32) public eventOracleRequests;
+
+    // ===== Upgradeable storage gap =====
+    uint256[40] private __gap;
+
     // ============ Constructor & Initializer ============
 
     constructor() {
@@ -51,12 +98,9 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @param _orderBookPod OrderBookPod 合约地址
      * @param _oracleAdapter OracleAdapter 合约地址
      */
-    function initialize(
-        address initialOwner,
-        address _orderBookPod,
-        address _oracleAdapter
-    ) external initializer {
-        _initializeOwner(initialOwner);
+    function initialize(address initialOwner, address _orderBookPod, address _oracleAdapter) external initializer {
+        __Ownable_init(initialOwner);
+        __Pausable_init();
         orderBookPod = _orderBookPod;
         oracleAdapter = _oracleAdapter;
         nextEventId = 1; // Start from 1
@@ -64,6 +108,12 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         // Owner is an event creator by default
         isEventCreator[initialOwner] = true;
     }
+
+    /**
+     * @notice Authorizes upgrade to new implementation
+     * @dev Only owner can upgrade (UUPS pattern)
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ 核心功能 Functions ============
 
@@ -82,7 +132,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         uint256 deadline,
         uint256 settlementTime,
         Outcome[] calldata outcomes
-    ) external onlyEventCreator returns (uint256 eventId) {
+    ) external onlyEventCreator nonReentrant returns (uint256 eventId) {
         // Validate parameters
         require(bytes(title).length > 0, "EventPod: empty title");
         require(deadline > block.timestamp, "EventPod: deadline must be in future");
@@ -119,7 +169,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      */
     function requestOracleResult(
         uint256 eventId
-    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) returns (bytes32 requestId) {
+    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) nonReentrant returns (bytes32 requestId) {
         Event storage evt = events[eventId];
         require(evt.status == EventStatus.Active, "EventPod: event not active");
         require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
@@ -140,7 +190,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
     function updateEventStatus(
         uint256 eventId,
         EventStatus newStatus
-    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) {
+    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) nonReentrant {
         Event storage evt = events[eventId];
         EventStatus oldStatus = evt.status;
 
@@ -169,7 +219,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         uint256 eventId,
         uint8 winningOutcomeIndex,
         bytes calldata proof
-    ) external override onlyAuthorizedOracle eventMustExist(eventId) {
+    ) external override onlyAuthorizedOracle eventMustExist(eventId) nonReentrant {
         _settleEvent(eventId, winningOutcomeIndex, proof);
     }
 
@@ -183,7 +233,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         uint256 eventId,
         uint8 winningOutcomeIndex,
         bytes calldata proof
-    ) external override onlyAuthorizedOracle eventMustExist(eventId) {
+    ) external override onlyAuthorizedOracle eventMustExist(eventId) nonReentrant {
         _settleEvent(eventId, winningOutcomeIndex, proof);
     }
 
@@ -200,10 +250,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
         require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
 
         // 验证 winningOutcomeIndex 是否有效
-        require(
-            winningOutcomeIndex < uint8(evt.outcomes.length),
-            "EventPod: invalid winning outcome index"
-        );
+        require(winningOutcomeIndex < uint8(evt.outcomes.length), "EventPod: invalid winning outcome index");
 
         // 验证 Merkle Proof
         _verifyMerkleProof(eventId, winningOutcomeIndex, proof);
@@ -231,7 +278,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
     function cancelEvent(
         uint256 eventId,
         string calldata reason
-    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) {
+    ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) nonReentrant {
         Event storage evt = events[eventId];
 
         require(
@@ -405,7 +452,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @notice 添加事件创建者
      * @param creator 创建者地址
      */
-    function addEventCreator(address creator) external onlyOwner {
+    function addEventCreator(address creator) external onlyOwner nonReentrant {
         require(creator != address(0), "EventPod: invalid address");
         isEventCreator[creator] = true;
         emit EventCreatorAdded(creator);
@@ -415,7 +462,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @notice 移除事件创建者
      * @param creator 创建者地址
      */
-    function removeEventCreator(address creator) external onlyOwner {
+    function removeEventCreator(address creator) external onlyOwner nonReentrant {
         require(isEventCreator[creator], "EventPod: not an event creator");
         isEventCreator[creator] = false;
         emit EventCreatorRemoved(creator);
@@ -425,7 +472,7 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @notice 更新 OrderBookPod 地址
      * @param _orderBookPod 新地址
      */
-    function setOrderBookPod(address _orderBookPod) external onlyOwner {
+    function setOrderBookPod(address _orderBookPod) external onlyOwner nonReentrant {
         require(_orderBookPod != address(0), "EventPod: invalid address");
         orderBookPod = _orderBookPod;
     }
@@ -434,8 +481,18 @@ contract EventPod is PodBase, EventPodStorage, IOracleConsumer {
      * @notice 设置 OracleAdapter 地址
      * @param _oracleAdapter OracleAdapter 地址
      */
-    function setOracleAdapter(address _oracleAdapter) external onlyOwner {
+    function setOracleAdapter(address _oracleAdapter) external onlyOwner nonReentrant {
         require(_oracleAdapter != address(0), "EventPod: invalid address");
         oracleAdapter = _oracleAdapter;
+    }
+
+    // ============ Pausable Admin ============
+
+    function pause() external onlyOwner nonReentrant {
+        _pause();
+    }
+
+    function unpause() external onlyOwner nonReentrant {
+        _unpause();
     }
 }

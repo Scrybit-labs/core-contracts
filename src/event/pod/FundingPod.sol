@@ -1,22 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./PodBase.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {FundingPodStorage} from "./FundingPodStorage.sol";
+import "../../interfaces/event/IFundingPod.sol";
 
 /**
  * @title FundingPod
  * @notice 资金 Pod - 负责资金管理、锁定和结算
  * @dev 每个 FundingPod 独立管理一组事件的资金
  */
-contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
+contract FundingPod is
+    Initializable,
+    OwnableUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    IFundingPod
+{
     using SafeERC20 for IERC20;
 
     // ============ 常量 Constants ============
+
+    /// @notice ETH 地址表示
+    address public constant ETHAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     /// @notice 价格精度(基点)
     uint256 public constant PRICE_PRECISION = 10000;
@@ -35,6 +49,70 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
         _;
     }
 
+    // ============ 基础状态变量 Basic State Variables ============
+
+    /// @notice OrderBookPod 合约地址(用于调用权限控制)
+    address public orderBookPod;
+
+    /// @notice EventPod 合约地址(用于调用权限控制)
+    address public eventPod;
+
+    /// @notice 支持的 Token 列表
+    address[] public SupportTokens;
+
+    /// @notice Token 是否支持映射
+    mapping(address => bool) public IsSupportToken;
+
+    // ============ 余额管理 Balance Management ============
+
+    /// @notice Pod 总 Token 余额: token => totalBalance
+    mapping(address => uint256) public tokenBalances;
+
+    /// @notice 用户可用余额: user => token => balance
+    mapping(address => mapping(address => uint256)) public userTokenBalances;
+
+    // ============ 虚拟 Long Token 持仓 Virtual Long Token Positions ============
+
+    /// @notice 用户虚拟 Long Token 持仓: user => token => eventId => outcomeIndex => longBalance
+    /// @dev 代表用户持有的某个结果的 Long token 数量
+    mapping(address => mapping(address => mapping(uint256 => mapping(uint8 => uint256)))) public longPositions;
+
+    /// @notice 订单锁定的 USDT: orderId => lockedUSDT
+    /// @dev 买单锁定 USDT,撮合时释放
+    mapping(uint256 => uint256) public orderLockedUSDT;
+
+    /// @notice 订单锁定的 Long Token: orderId => eventId => outcomeIndex => lockedLong
+    /// @dev 卖单锁定 Long token,撮合时释放
+    mapping(uint256 => mapping(uint256 => mapping(uint8 => uint256))) public orderLockedLong;
+
+    // ============ 事件奖金池管理 Event Prize Pool ============
+
+    /// @notice 事件奖金池: eventId => token => prizePool
+    mapping(uint256 => mapping(address => uint256)) public eventPrizePool;
+
+    /// @notice 事件结算状态: eventId => settled
+    mapping(uint256 => bool) public eventSettled;
+
+    /// @notice 事件获胜结果: eventId => winningOutcomeIndex
+    mapping(uint256 => uint8) public eventWinningOutcome;
+
+    // ============ 统计信息 Statistics ============
+
+    /// @notice 总入金量: token => totalDeposited
+    mapping(address => uint256) public totalDeposited;
+
+    /// @notice 总提现量: token => totalWithdrawn
+    mapping(address => uint256) public totalWithdrawn;
+
+    // ============ 事件结果信息 Event Outcome Info ============
+
+    /// @notice 事件的所有结果索引: eventId => outcomeIndices[]
+    /// @dev 用于铸造完整集合时遍历所有结果
+    mapping(uint256 => uint8[]) public eventOutcomes;
+
+    // ===== Upgradeable storage gap =====
+    uint256[35] private __gap;
+
     // ============ Constructor & Initializer ============
 
     constructor() {
@@ -47,16 +125,18 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param _orderBookPod OrderBookPod 合约地址
      * @param _eventPod EventPod 合约地址
      */
-    function initialize(
-        address initialOwner,
-        address _orderBookPod,
-        address _eventPod
-    ) external initializer {
-        _initializeOwner(initialOwner);
-        _initializePausable();
+    function initialize(address initialOwner, address _orderBookPod, address _eventPod) external initializer {
+        __Ownable_init(initialOwner);
+        __Pausable_init();
         orderBookPod = _orderBookPod;
         eventPod = _eventPod;
     }
+
+    /**
+     * @notice Authorizes upgrade to new implementation
+     * @dev Only owner can upgrade (UUPS pattern)
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ 基础功能 Basic Functions ============
 
@@ -65,14 +145,14 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function deposit(address tokenAddress, uint256 amount) external payable whenNotPaused {
+    function deposit(address tokenAddress, uint256 amount) external payable whenNotPaused nonReentrant {
         _deposit(msg.sender, tokenAddress, amount, msg.value);
     }
 
     /**
      * @notice 用户直接 ETH 入金
      */
-    function depositEth() external payable whenNotPaused {
+    function depositEth() external payable whenNotPaused nonReentrant {
         _deposit(msg.sender, ETHAddress, msg.value, msg.value);
     }
 
@@ -81,7 +161,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param tokenAddress Token 地址
      * @param amount 金额
      */
-    function depositErc20(IERC20 tokenAddress, uint256 amount) external whenNotPaused {
+    function depositErc20(IERC20 tokenAddress, uint256 amount) external whenNotPaused nonReentrant {
         _deposit(msg.sender, address(tokenAddress), amount, 0);
     }
 
@@ -152,7 +232,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param ERC20Address Token 地址
      * @param isValid 是否支持
      */
-    function setSupportERC20Token(address ERC20Address, bool isValid) external onlyOwner {
+    function setSupportERC20Token(address ERC20Address, bool isValid) external onlyOwner nonReentrant {
         IsSupportToken[ERC20Address] = isValid;
 
         if (isValid) {
@@ -181,7 +261,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param eventId 事件 ID
      * @param outcomeCount 结果数量
      */
-    function registerEvent(uint256 eventId, uint8 outcomeCount) external onlyOrderBookPod {
+    function registerEvent(uint256 eventId, uint8 outcomeCount) external onlyOrderBookPod nonReentrant {
         require(eventOutcomes[eventId].length == 0, "FundingPod: event already registered");
         require(outcomeCount > 0, "FundingPod: empty outcomes");
 
@@ -203,7 +283,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param token Token 地址
      * @param amount 铸造数量
      */
-    function mintCompleteSetDirect(uint256 eventId, address token, uint256 amount) external whenNotPaused {
+    function mintCompleteSetDirect(uint256 eventId, address token, uint256 amount) external whenNotPaused nonReentrant {
         _mintCompleteSet(msg.sender, eventId, token, amount);
     }
 
@@ -244,7 +324,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @param token Token 地址
      * @param amount 销毁数量
      */
-    function burnCompleteSetDirect(uint256 eventId, address token, uint256 amount) external whenNotPaused {
+    function burnCompleteSetDirect(uint256 eventId, address token, uint256 amount) external whenNotPaused nonReentrant {
         _burnCompleteSet(msg.sender, eventId, token, amount);
     }
 
@@ -291,7 +371,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
         uint256 amount,
         uint256 eventId,
         uint8 outcomeIndex
-    ) external onlyOrderBookPod {
+    ) external onlyOrderBookPod nonReentrant {
         require(amount > 0, "FundingPod: amount must be greater than zero");
 
         if (isBuyOrder) {
@@ -335,7 +415,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
         bool isBuyOrder,
         uint256 eventId,
         uint8 outcomeIndex
-    ) external onlyOrderBookPod {
+    ) external onlyOrderBookPod nonReentrant {
         if (isBuyOrder) {
             // 买单: 解锁 USDT
             uint256 lockedAmount = orderLockedUSDT[orderId];
@@ -379,7 +459,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
         uint256 matchPrice,
         uint256 eventId,
         uint8 outcomeIndex
-    ) external onlyOrderBookPod {
+    ) external onlyOrderBookPod nonReentrant {
         // 计算买家支付金额
         uint256 payment = (matchAmount * matchPrice) / PRICE_PRECISION;
 
@@ -539,7 +619,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @notice 更新 OrderBookPod 地址
      * @param _orderBookPod 新地址
      */
-    function setOrderBookPod(address _orderBookPod) external onlyOwner {
+    function setOrderBookPod(address _orderBookPod) external onlyOwner nonReentrant {
         require(_orderBookPod != address(0), "FundingPod: invalid address");
         orderBookPod = _orderBookPod;
     }
@@ -548,7 +628,7 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
      * @notice 更新 EventPod 地址
      * @param _eventPod 新地址
      */
-    function setEventPod(address _eventPod) external onlyOwner {
+    function setEventPod(address _eventPod) external onlyOwner nonReentrant {
         require(_eventPod != address(0), "FundingPod: invalid address");
         eventPod = _eventPod;
     }
@@ -558,14 +638,14 @@ contract FundingPod is PodBase, ReentrancyGuard, FundingPodStorage {
     /**
      * @notice 暂停合约
      */
-    function pause() external onlyOwner {
+    function pause() external onlyOwner nonReentrant {
         _pause();
     }
 
     /**
      * @notice 恢复合约
      */
-    function unpause() external onlyOwner {
+    function unpause() external onlyOwner nonReentrant {
         _unpause();
     }
 

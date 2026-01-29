@@ -35,8 +35,7 @@ contract SimpleDeploy is Script, DeploymentConfig {
         // OracleManager (proxy)
         OracleManager oracleManagerImpl = new OracleManager();
         bytes memory initData = abi.encodeCall(OracleManager.initialize, (config.initialOwner));
-        OracleManager oracleManager =
-            OracleManager(address(new ERC1967Proxy(address(oracleManagerImpl), initData)));
+        OracleManager oracleManager = OracleManager(address(new ERC1967Proxy(address(oracleManagerImpl), initData)));
 
         // OracleAdapter (proxy, consumer wired later)
         OracleAdapter oracleAdapterImpl = new OracleAdapter();
@@ -44,19 +43,51 @@ contract SimpleDeploy is Script, DeploymentConfig {
         OracleAdapter oracleAdapter =
             OracleAdapter(payable(address(new ERC1967Proxy(address(oracleAdapterImpl), initData))));
 
-        // Deploy pods (single instances)
-        EventPod eventPod = new EventPod();
-        OrderBookPod orderBookPod = new OrderBookPod();
-        FundingPod fundingPod = new FundingPod();
-        FeeVaultPod feeVaultPod = new FeeVaultPod();
+        // Deploy Pod implementations
+        console.log("Deploying Pod implementations...");
+        EventPod eventPodImpl = new EventPod();
+        OrderBookPod orderBookPodImpl = new OrderBookPod();
+        FundingPod fundingPodImpl = new FundingPod();
+        FeeVaultPod feeVaultPodImpl = new FeeVaultPod();
 
-        // Initialize pods (wire addresses in a second step)
-        eventPod.initialize(config.initialOwner, address(0), address(oracleAdapter));
-        feeVaultPod.initialize(config.initialOwner, address(0));
-        fundingPod.initialize(config.initialOwner, address(0), address(eventPod));
-        orderBookPod.initialize(
-            config.initialOwner, address(eventPod), address(fundingPod), address(feeVaultPod)
+        console.log("EventPod implementation:", address(eventPodImpl));
+        console.log("OrderBookPod implementation:", address(orderBookPodImpl));
+        console.log("FundingPod implementation:", address(fundingPodImpl));
+        console.log("FeeVaultPod implementation:", address(feeVaultPodImpl));
+        console.log("");
+
+        // Deploy proxies with initialization (UUPS pattern using ERC1967Proxy)
+        console.log("Deploying Pod proxies...");
+
+        bytes memory eventPodInitData = abi.encodeCall(
+            EventPod.initialize,
+            (config.initialOwner, address(0), address(oracleAdapter))
         );
+        EventPod eventPod = EventPod(address(new ERC1967Proxy(address(eventPodImpl), eventPodInitData)));
+
+        bytes memory feeVaultPodInitData = abi.encodeCall(FeeVaultPod.initialize, (config.initialOwner, address(0)));
+        FeeVaultPod feeVaultPod =
+            FeeVaultPod(payable(address(new ERC1967Proxy(address(feeVaultPodImpl), feeVaultPodInitData))));
+
+        bytes memory fundingPodInitData = abi.encodeCall(
+            FundingPod.initialize,
+            (config.initialOwner, address(0), address(eventPod))
+        );
+        FundingPod fundingPod =
+            FundingPod(payable(address(new ERC1967Proxy(address(fundingPodImpl), fundingPodInitData))));
+
+        bytes memory orderBookPodInitData = abi.encodeCall(
+            OrderBookPod.initialize,
+            (config.initialOwner, address(eventPod), address(fundingPod), address(feeVaultPod))
+        );
+        OrderBookPod orderBookPod =
+            OrderBookPod(address(new ERC1967Proxy(address(orderBookPodImpl), orderBookPodInitData)));
+
+        console.log("EventPod proxy:", address(eventPod));
+        console.log("OrderBookPod proxy:", address(orderBookPod));
+        console.log("FundingPod proxy:", address(fundingPod));
+        console.log("FeeVaultPod proxy:", address(feeVaultPod));
+        console.log("");
 
         // Wire pod references
         eventPod.setOrderBookPod(address(orderBookPod));
@@ -80,12 +111,21 @@ contract SimpleDeploy is Script, DeploymentConfig {
         vm.stopBroadcast();
 
         console.log("=== Deployment Summary ===");
-        console.log("EventPod:", address(eventPod));
-        console.log("OrderBookPod:", address(orderBookPod));
-        console.log("FundingPod:", address(fundingPod));
-        console.log("FeeVaultPod:", address(feeVaultPod));
-        console.log("OracleManager:", address(oracleManager));
-        console.log("OracleAdapter:", address(oracleAdapter));
+        console.log("Pod Proxies:");
+        console.log("  EventPod:", address(eventPod));
+        console.log("  OrderBookPod:", address(orderBookPod));
+        console.log("  FundingPod:", address(fundingPod));
+        console.log("  FeeVaultPod:", address(feeVaultPod));
+        console.log("");
+        console.log("Pod Implementations:");
+        console.log("  EventPod impl:", address(eventPodImpl));
+        console.log("  OrderBookPod impl:", address(orderBookPodImpl));
+        console.log("  FundingPod impl:", address(fundingPodImpl));
+        console.log("  FeeVaultPod impl:", address(feeVaultPodImpl));
+        console.log("");
+        console.log("Oracle System:");
+        console.log("  OracleManager:", address(oracleManager));
+        console.log("  OracleAdapter:", address(oracleAdapter));
         console.log("==========================================");
     }
 }

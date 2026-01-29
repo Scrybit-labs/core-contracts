@@ -27,12 +27,20 @@ interface IFundingPod {
 
     /// @notice 资金锁定事件
     event FundsLocked(
-        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint8 outcomeIndex
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 indexed eventId,
+        uint8 outcomeIndex
     );
 
     /// @notice 资金解锁事件
     event FundsUnlocked(
-        address indexed user, address indexed token, uint256 amount, uint256 indexed eventId, uint8 outcomeIndex
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 indexed eventId,
+        uint8 outcomeIndex
     );
 
     /// @notice 订单结算事件
@@ -237,10 +245,12 @@ interface IFundingPod {
      * @param outcomeIndex 结果索引
      * @return position Long Token 数量
      */
-    function getLongPosition(address user, address token, uint256 eventId, uint8 outcomeIndex)
-        external
-        view
-        returns (uint256);
+    function getLongPosition(
+        address user,
+        address token,
+        uint256 eventId,
+        uint8 outcomeIndex
+    ) external view returns (uint256);
 
     /**
      * @notice 获取订单锁定的 USDT
@@ -256,11 +266,7 @@ interface IFundingPod {
      * @param outcomeIndex 结果索引
      * @return locked 锁定的 Long Token 数量
      */
-    function getOrderLockedLong(
-        uint256 orderId,
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256);
+    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint8 outcomeIndex) external view returns (uint256);
 
     /**
      * @notice 获取事件奖金池
