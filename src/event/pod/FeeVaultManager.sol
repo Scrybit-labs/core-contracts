@@ -10,35 +10,35 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "../../interfaces/event/IFeeVaultPod.sol";
+import "../../interfaces/event/IFeeVaultManager.sol";
 
 /**
- * @title FeeVaultPod
- * @notice 手续费金库 Pod - 负责手续费收取、存储和分配
- * @dev 每个 FeeVaultPod 独立管理一组事件的手续费
+ * @title FeeVaultManager
+ * @notice 手续费金库 Manager - 负责手续费收取、存储和分配
+ * @dev 每个 FeeVaultManager 独立管理一组事件的手续费
  */
-contract FeeVaultPod is
+contract FeeVaultManager is
     Initializable,
     OwnableUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuard,
-    IFeeVaultPod
+    IFeeVaultManager
 {
     using SafeERC20 for IERC20;
 
     // ============ Modifiers ============
 
-    /// @notice 仅 OrderBookPod 可调用
-    modifier onlyOrderBookPod() {
-        require(msg.sender == orderBookPod, "FeeVaultPod: only orderBookPod");
+    /// @notice 仅 OrderBookManager 可调用
+    modifier onlyOrderBookManager() {
+        require(msg.sender == orderBookManager, "FeeVaultManager: only orderBookManager");
         _;
     }
 
     // ============ 合约地址 Contract Addresses ============
 
-    /// @notice OrderBookPod 合约地址
-    address public orderBookPod;
+    /// @notice OrderBookManager 合约地址
+    address public orderBookManager;
 
     // ============ 手续费配置 Fee Configuration ============
 
@@ -91,12 +91,12 @@ contract FeeVaultPod is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _orderBookPod OrderBookPod 合约地址
+     * @param _orderBookManager OrderBookManager 合约地址
      */
-    function initialize(address initialOwner, address _orderBookPod) external initializer {
+    function initialize(address initialOwner, address _orderBookManager) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        orderBookPod = _orderBookPod;
+        orderBookManager = _orderBookManager;
 
         // 设置默认手续费率
         _setFeeRate("trade", 30); // 0.3% 交易手续费
@@ -124,7 +124,7 @@ contract FeeVaultPod is
         uint256 amount,
         uint256 eventId,
         string calldata feeType
-    ) external whenNotPaused onlyOrderBookPod nonReentrant {
+    ) external whenNotPaused onlyOrderBookManager nonReentrant {
         if (amount == 0) revert InvalidAmount(amount);
 
         // 更新余额
@@ -159,7 +159,7 @@ contract FeeVaultPod is
         if (token == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)) {
             // ETH
             (bool sent, ) = owner().call{value: amount}("");
-            require(sent, "FeeVaultPod: failed to send ETH");
+            require(sent, "FeeVaultManager: failed to send ETH");
         } else {
             // ERC20
             IERC20(token).safeTransfer(owner(), amount);
@@ -238,12 +238,12 @@ contract FeeVaultPod is
     // ============ 管理功能 Admin Functions ============
 
     /**
-     * @notice 设置 OrderBookPod 地址
-     * @param _orderBookPod OrderBookPod 地址
+     * @notice 设置 OrderBookManager 地址
+     * @param _orderBookManager OrderBookManager 地址
      */
-    function setOrderBookPod(address _orderBookPod) external onlyOwner nonReentrant {
-        require(_orderBookPod != address(0), "FeeVaultPod: invalid address");
-        orderBookPod = _orderBookPod;
+    function setOrderBookManager(address _orderBookManager) external onlyOwner nonReentrant {
+        require(_orderBookManager != address(0), "FeeVaultManager: invalid address");
+        orderBookManager = _orderBookManager;
     }
 
     /**

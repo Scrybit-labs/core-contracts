@@ -7,41 +7,41 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "../../interfaces/event/IOrderBookPod.sol";
-import "../../interfaces/event/IEventPod.sol";
-import "../../interfaces/event/IFundingPod.sol";
-import "../../interfaces/event/IFeeVaultPod.sol";
+import "../../interfaces/event/IOrderBookManager.sol";
+import "../../interfaces/event/IEventManager.sol";
+import "../../interfaces/event/IFundingManager.sol";
+import "../../interfaces/event/IFeeVaultManager.sol";
 
 /**
- * @title OrderBookPod
- * @notice 订单簿 Pod - 负责订单撮合和持仓管理
- * @dev 集成 FundingPod 进行资金管理
+ * @title OrderBookManager
+ * @notice 订单簿 Manager - 负责订单撮合和持仓管理
+ * @dev 集成 FundingManager 进行资金管理
  */
-contract OrderBookPod is
+contract OrderBookManager is
     Initializable,
     OwnableUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuard,
-    IOrderBookPod
+    IOrderBookManager
 {
     // ============ Modifiers ============
 
-    modifier onlyEventPod() {
-        require(msg.sender == eventPod, "OrderBookPod: only eventPod");
+    modifier onlyEventManager() {
+        require(msg.sender == eventManager, "OrderBookManager: only eventManager");
         _;
     }
 
     // ============ 合约地址 Contract Addresses ============
 
-    /// @notice EventPod 合约地址
-    address public eventPod;
+    /// @notice EventManager 合约地址
+    address public eventManager;
 
-    /// @notice FundingPod 合约地址
-    address public fundingPod;
+    /// @notice FundingManager 合约地址
+    address public fundingManager;
 
-    /// @notice FeeVaultPod 合约地址
-    address public feeVaultPod;
+    /// @notice FeeVaultManager 合约地址
+    address public feeVaultManager;
 
     // ============ 事件与结果管理 Event & Outcome Management ============
 
@@ -120,15 +120,15 @@ contract OrderBookPod is
 
     function initialize(
         address initialOwner,
-        address _eventPod,
-        address _fundingPod,
-        address _feeVaultPod
+        address _eventManager,
+        address _fundingManager,
+        address _feeVaultManager
     ) public initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        eventPod = _eventPod;
-        fundingPod = _fundingPod;
-        feeVaultPod = _feeVaultPod;
+        eventManager = _eventManager;
+        fundingManager = _fundingManager;
+        feeVaultManager = _feeVaultManager;
         nextOrderId = 1; // Start from 1
     }
 
@@ -173,16 +173,16 @@ contract OrderBookPod is
 
         // 计算手续费
         uint256 fee = 0;
-        if (feeVaultPod != address(0)) {
-            fee = IFeeVaultPod(feeVaultPod).calculateFee(amount, "trade");
+        if (feeVaultManager != address(0)) {
+            fee = IFeeVaultManager(feeVaultManager).calculateFee(amount, "trade");
         }
 
-        // 集成 FundingPod: 锁定下单所需资金或 Long Token
+        // 集成 FundingManager: 锁定下单所需资金或 Long Token
         // 买单锁定 USDT (包含手续费): (amount + fee) * price / MAX_PRICE
         // 卖单锁定 Long Token (包含手续费): amount + fee
         uint256 requiredAmount = side == OrderSide.Buy ? ((amount + fee) * price) / MAX_PRICE : (amount + fee);
 
-        IFundingPod(fundingPod).lockForOrder(
+        IFundingManager(fundingManager).lockForOrder(
             user, // 用户地址
             nextOrderId, // 订单 ID
             tokenAddress, // Token 地址
@@ -193,8 +193,8 @@ contract OrderBookPod is
         );
 
         // 收取手续费
-        if (fee > 0 && feeVaultPod != address(0)) {
-            IFeeVaultPod(feeVaultPod).collectFee(
+        if (fee > 0 && feeVaultManager != address(0)) {
+            IFeeVaultManager(feeVaultManager).collectFee(
                 tokenAddress,
                 user, // 使用传入的真实用户地址
                 fee,
@@ -252,8 +252,8 @@ contract OrderBookPod is
         order.status = OrderStatus.Cancelled;
 
         if (order.remainingAmount > 0) {
-            // 集成 FundingPod: 解锁剩余未成交资金或 Long Token
-            IFundingPod(fundingPod).unlockForOrder(
+            // 集成 FundingManager: 解锁剩余未成交资金或 Long Token
+            IFundingManager(fundingManager).unlockForOrder(
                 order.user,
                 orderId,
                 order.tokenAddress,
@@ -266,7 +266,7 @@ contract OrderBookPod is
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
     }
 
-    function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventPod nonReentrant {
+    function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventManager nonReentrant {
         if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
         if (!supportedOutcomes[eventId][winningOutcomeIndex]) {
@@ -283,12 +283,12 @@ contract OrderBookPod is
     }
 
     function addEvent(uint256 eventId, uint8 outcomeCount) external nonReentrant {
-        require(!supportedEvents[eventId], "OrderBookPod: event exists");
+        require(!supportedEvents[eventId], "OrderBookManager: event exists");
 
-        IEventPod.Event memory evt = IEventPod(eventPod).getEvent(eventId);
-        require(evt.status == IEventPod.EventStatus.Active, "OrderBookPod: event not active");
-        require(outcomeCount > 0 && outcomeCount <= 32, "OrderBookPod: invalid outcomeCount");
-        require(outcomeCount == evt.outcomes.length, "OrderBookPod: outcomeCount mismatch");
+        IEventManager.Event memory evt = IEventManager(eventManager).getEvent(eventId);
+        require(evt.status == IEventManager.EventStatus.Active, "OrderBookManager: event not active");
+        require(outcomeCount > 0 && outcomeCount <= 32, "OrderBookManager: invalid outcomeCount");
+        require(outcomeCount == evt.outcomes.length, "OrderBookManager: outcomeCount mismatch");
         supportedEvents[eventId] = true;
 
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
@@ -297,8 +297,8 @@ contract OrderBookPod is
             supportedOutcomes[eventId][i] = true;
         }
 
-        // 集成 FundingPod: 注册事件的结果选项 (用于完整集合铸造)
-        IFundingPod(fundingPod).registerEvent(eventId, outcomeCount);
+        // 集成 FundingManager: 注册事件的结果选项 (用于完整集合铸造)
+        IFundingManager(fundingManager).registerEvent(eventId, outcomeCount);
 
         emit EventAdded(eventId, outcomeCount);
     }
@@ -401,8 +401,8 @@ contract OrderBookPod is
 
         // ✅ 计算撮合手续费
         uint256 matchFee = 0;
-        if (feeVaultPod != address(0)) {
-            matchFee = IFeeVaultPod(feeVaultPod).calculateFee(matchAmount, "trade");
+        if (feeVaultManager != address(0)) {
+            matchFee = IFeeVaultManager(feeVaultManager).calculateFee(matchAmount, "trade");
         }
 
         // ✅ 持仓管理: 记录买家持仓增加
@@ -416,8 +416,8 @@ contract OrderBookPod is
             positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] = 0;
         }
 
-        // 集成 FundingPod: 资金结算 (虚拟 Long Token 模型)
-        IFundingPod(fundingPod).settleMatchedOrder(
+        // 集成 FundingManager: 资金结算 (虚拟 Long Token 模型)
+        IFundingManager(fundingManager).settleMatchedOrder(
             buyOrderId, // 买单 ID
             sellOrderId, // 卖单 ID
             buyOrder.user, // 买家地址
@@ -430,13 +430,13 @@ contract OrderBookPod is
         );
 
         // ✅ 收取撮合手续费
-        if (matchFee > 0 && feeVaultPod != address(0)) {
+        if (matchFee > 0 && feeVaultManager != address(0)) {
             // 买卖双方各支付一半手续费
             uint256 buyerFee = matchFee / 2;
             uint256 sellerFee = matchFee - buyerFee;
 
             if (buyerFee > 0) {
-                IFeeVaultPod(feeVaultPod).collectFee(
+                IFeeVaultManager(feeVaultManager).collectFee(
                     buyOrder.tokenAddress,
                     buyOrder.user,
                     buyerFee,
@@ -446,7 +446,7 @@ contract OrderBookPod is
             }
 
             if (sellerFee > 0) {
-                IFeeVaultPod(feeVaultPod).collectFee(
+                IFeeVaultManager(feeVaultManager).collectFee(
                     sellOrder.tokenAddress,
                     sellOrder.user,
                     sellerFee,
@@ -606,9 +606,9 @@ contract OrderBookPod is
                 if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                     order.status = OrderStatus.Cancelled;
 
-                    // 集成 FundingPod: 批量撤单解锁资金或 Long Token
+                    // 集成 FundingManager: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingPod(fundingPod).unlockForOrder(
+                        IFundingManager(fundingManager).unlockForOrder(
                             order.user,
                             ids[j], // orderId
                             order.tokenAddress,
@@ -629,9 +629,9 @@ contract OrderBookPod is
                 if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
                     order.status = OrderStatus.Cancelled;
 
-                    // 集成 FundingPod: 批量撤单解锁资金或 Long Token
+                    // 集成 FundingManager: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingPod(fundingPod).unlockForOrder(
+                        IFundingManager(fundingManager).unlockForOrder(
                             order.user,
                             ids[j], // orderId
                             order.tokenAddress,
@@ -645,7 +645,7 @@ contract OrderBookPod is
         }
     }
 
-    // ✅ 结算持仓 - 集成 FundingPod 分配奖金
+    // ✅ 结算持仓 - 集成 FundingManager 分配奖金
     function _settlePositions(uint256 eventId, uint8 winningOutcomeIndex) internal {
         // 获取获胜结果的所有持仓者
         address[] storage winners = positionHolders[eventId][winningOutcomeIndex];
@@ -671,9 +671,9 @@ contract OrderBookPod is
             }
         }
 
-        // 如果找到了 token 地址,调用 FundingPod 结算
+        // 如果找到了 token 地址,调用 FundingManager 结算
         if (tokenAddress != address(0)) {
-            IFundingPod(fundingPod).settleEvent(eventId, winningOutcomeIndex, tokenAddress, winners, winningPositions);
+            IFundingManager(fundingManager).settleEvent(eventId, winningOutcomeIndex, tokenAddress, winners, winningPositions);
         }
     }
 
@@ -717,21 +717,21 @@ contract OrderBookPod is
     // ============ 管理功能 Admin Functions ============
 
     /**
-     * @notice 设置 FundingPod 地址
-     * @param _fundingPod FundingPod 地址
+     * @notice 设置 FundingManager 地址
+     * @param _fundingManager FundingManager 地址
      */
-    function setFundingPod(address _fundingPod) external onlyOwner nonReentrant {
-        require(_fundingPod != address(0), "OrderBookPod: invalid address");
-        fundingPod = _fundingPod;
+    function setFundingManager(address _fundingManager) external onlyOwner nonReentrant {
+        require(_fundingManager != address(0), "OrderBookManager: invalid address");
+        fundingManager = _fundingManager;
     }
 
     /**
-     * @notice 设置 FeeVaultPod 地址
-     * @param _feeVaultPod FeeVaultPod 地址
+     * @notice 设置 FeeVaultManager 地址
+     * @param _feeVaultManager FeeVaultManager 地址
      */
-    function setFeeVaultPod(address _feeVaultPod) external onlyOwner nonReentrant {
-        require(_feeVaultPod != address(0), "OrderBookPod: invalid address");
-        feeVaultPod = _feeVaultPod;
+    function setFeeVaultManager(address _feeVaultManager) external onlyOwner nonReentrant {
+        require(_feeVaultManager != address(0), "OrderBookManager: invalid address");
+        feeVaultManager = _feeVaultManager;
     }
 
     /**

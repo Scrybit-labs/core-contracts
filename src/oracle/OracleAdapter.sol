@@ -31,9 +31,9 @@ contract OracleAdapter is
         _;
     }
 
-    /// @notice 仅授权的 EventPod 可调用
-    modifier onlyAuthorizedEventPod() {
-        require(authorizedEventPods[msg.sender], "OracleAdapter: only authorized EventPod");
+    /// @notice 仅授权的 EventManager 可调用
+    modifier onlyAuthorizedEventManager() {
+        require(authorizedEventManagers[msg.sender], "OracleAdapter: only authorized EventManager");
         _;
     }
 
@@ -46,14 +46,14 @@ contract OracleAdapter is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _oracleConsumer OracleConsumer 地址(EventPod)
+     * @param _oracleConsumer OracleConsumer 地址(EventManager)
      */
     function initialize(address initialOwner, address _oracleConsumer) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
         oracleConsumer = _oracleConsumer;
         if (_oracleConsumer != address(0)) {
-            authorizedEventPods[_oracleConsumer] = true;
+            authorizedEventManagers[_oracleConsumer] = true;
         }
 
         // 设置默认配置
@@ -72,7 +72,7 @@ contract OracleAdapter is
     function requestEventResult(
         uint256 eventId,
         string calldata eventDescription
-    ) external whenNotPaused onlyAuthorizedEventPod returns (bytes32 requestId) {
+    ) external whenNotPaused onlyAuthorizedEventManager returns (bytes32 requestId) {
         if (eventId == 0) revert InvalidEventId(eventId);
 
         // 检查是否已存在请求
@@ -277,24 +277,24 @@ contract OracleAdapter is
     }
 
     /**
-     * @notice 添加授权的 EventPod
-     * @param eventPod EventPod 地址
+     * @notice 添加授权的 EventManager
+     * @param eventManager EventManager 地址
      */
-    function addAuthorizedEventPod(address eventPod) external onlyOwner {
-        require(eventPod != address(0), "OracleAdapter: invalid address");
-        require(!authorizedEventPods[eventPod], "OracleAdapter: already authorized");
+    function addAuthorizedEventManager(address eventManager) external onlyOwner {
+        require(eventManager != address(0), "OracleAdapter: invalid address");
+        require(!authorizedEventManagers[eventManager], "OracleAdapter: already authorized");
 
-        authorizedEventPods[eventPod] = true;
+        authorizedEventManagers[eventManager] = true;
     }
 
     /**
-     * @notice 移除授权的 EventPod
-     * @param eventPod EventPod 地址
+     * @notice 移除授权的 EventManager
+     * @param eventManager EventManager 地址
      */
-    function removeAuthorizedEventPod(address eventPod) external onlyOwner {
-        require(authorizedEventPods[eventPod], "OracleAdapter: not authorized");
+    function removeAuthorizedEventManager(address eventManager) external onlyOwner {
+        require(authorizedEventManagers[eventManager], "OracleAdapter: not authorized");
 
-        authorizedEventPods[eventPod] = false;
+        authorizedEventManagers[eventManager] = false;
     }
 
     /**

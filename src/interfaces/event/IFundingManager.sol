@@ -4,11 +4,11 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title IFundingPod
- * @notice 资金 Pod 接口 - 负责资金管理、锁定和结算
- * @dev 每个 FundingPod 独立管理一组事件的资金
+ * @title IFundingManager
+ * @notice 资金 Manager 接口 - 负责资金管理、锁定和结算
+ * @dev 每个 FundingManager 独立管理一组事件的资金
  */
-interface IFundingPod {
+interface IFundingManager {
     // ============ 常量 Constants ============
 
     /// @notice ETH 地址表示
@@ -223,7 +223,7 @@ interface IFundingPod {
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 获取 Pod 总 Token 余额
+     * @notice 获取 Manager 总 Token 余额
      * @param token Token 地址
      * @return balance Token 总余额
      */

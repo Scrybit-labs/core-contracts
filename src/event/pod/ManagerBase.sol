@@ -7,19 +7,19 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 /**
- * @title PodBase
+ * @title ManagerBase
  * @notice Upgradeable base with ownership, pausing, and UUPS support
  */
-abstract contract PodBase is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
+abstract contract ManagerBase is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     // ===== Upgradeable storage gap =====
     uint256[50] private __gap;
 
-    function __PodBase_init(address initialOwner) internal onlyInitializing {
+    function __ManagerBase_init(address initialOwner) internal onlyInitializing {
         __Ownable_init(initialOwner);
         __Pausable_init();
     }
 
-    function __PodBase_init_unchained(address) internal onlyInitializing {}
+    function __ManagerBase_init_unchained(address) internal onlyInitializing {}
 
     /**
      * @notice Authorizes upgrade to new implementation

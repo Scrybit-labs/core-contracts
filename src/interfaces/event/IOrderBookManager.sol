@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-interface IOrderBookPod {
+interface IOrderBookManager {
     enum OrderSide {
         Buy,
         Sell
@@ -111,8 +111,8 @@ interface IOrderBookPod {
     function getPosition(uint256 eventId, uint8 outcomeIndex, address user) external view returns (uint256 position);
 
     /**
-     * @notice 设置 FundingPod 地址
-     * @param _fundingPod FundingPod 地址
+     * @notice 设置 FundingManager 地址
+     * @param _fundingManager FundingManager 地址
      */
-    function setFundingPod(address _fundingPod) external;
+    function setFundingManager(address _fundingManager) external;
 }

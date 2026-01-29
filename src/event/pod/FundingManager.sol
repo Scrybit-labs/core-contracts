@@ -10,20 +10,20 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "../../interfaces/event/IFundingPod.sol";
+import "../../interfaces/event/IFundingManager.sol";
 
 /**
- * @title FundingPod
- * @notice 资金 Pod - 负责资金管理、锁定和结算
- * @dev 每个 FundingPod 独立管理一组事件的资金
+ * @title FundingManager
+ * @notice 资金 Manager - 负责资金管理、锁定和结算
+ * @dev 每个 FundingManager 独立管理一组事件的资金
  */
-contract FundingPod is
+contract FundingManager is
     Initializable,
     OwnableUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuard,
-    IFundingPod
+    IFundingManager
 {
     using SafeERC20 for IERC20;
 
@@ -37,25 +37,25 @@ contract FundingPod is
 
     // ============ Modifiers ============
 
-    /// @notice 仅 OrderBookPod 可调用
-    modifier onlyOrderBookPod() {
-        require(msg.sender == orderBookPod, "FundingPod: only orderBookPod");
+    /// @notice 仅 OrderBookManager 可调用
+    modifier onlyOrderBookManager() {
+        require(msg.sender == orderBookManager, "FundingManager: only orderBookManager");
         _;
     }
 
-    /// @notice 仅 EventPod 可调用
-    modifier onlyEventPod() {
-        require(msg.sender == eventPod, "FundingPod: only eventPod");
+    /// @notice 仅 EventManager 可调用
+    modifier onlyEventManager() {
+        require(msg.sender == eventManager, "FundingManager: only eventManager");
         _;
     }
 
     // ============ 基础状态变量 Basic State Variables ============
 
-    /// @notice OrderBookPod 合约地址(用于调用权限控制)
-    address public orderBookPod;
+    /// @notice OrderBookManager 合约地址(用于调用权限控制)
+    address public orderBookManager;
 
-    /// @notice EventPod 合约地址(用于调用权限控制)
-    address public eventPod;
+    /// @notice EventManager 合约地址(用于调用权限控制)
+    address public eventManager;
 
     /// @notice 支持的 Token 列表
     address[] public SupportTokens;
@@ -65,7 +65,7 @@ contract FundingPod is
 
     // ============ 余额管理 Balance Management ============
 
-    /// @notice Pod 总 Token 余额: token => totalBalance
+    /// @notice Manager 总 Token 余额: token => totalBalance
     mapping(address => uint256) public tokenBalances;
 
     /// @notice 用户可用余额: user => token => balance
@@ -122,14 +122,14 @@ contract FundingPod is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _orderBookPod OrderBookPod 合约地址
-     * @param _eventPod EventPod 合约地址
+     * @param _orderBookManager OrderBookManager 合约地址
+     * @param _eventManager EventManager 合约地址
      */
-    function initialize(address initialOwner, address _orderBookPod, address _eventPod) external initializer {
+    function initialize(address initialOwner, address _orderBookManager, address _eventManager) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        orderBookPod = _orderBookPod;
-        eventPod = _eventPod;
+        orderBookManager = _orderBookManager;
+        eventManager = _eventManager;
     }
 
     /**
@@ -175,7 +175,7 @@ contract FundingPod is
 
         // Handle token transfer
         if (tokenAddress == ETHAddress) {
-            require(ethValue == amount, "FundingPod: ETH amount mismatch");
+            require(ethValue == amount, "FundingManager: ETH amount mismatch");
         } else {
             IERC20(tokenAddress).safeTransferFrom(user, address(this), amount);
         }
@@ -219,7 +219,7 @@ contract FundingPod is
         // 转账
         if (tokenAddress == ETHAddress) {
             (bool sent, ) = withdrawAddress.call{value: amount}("");
-            require(sent, "FundingPod: failed to send ETH");
+            require(sent, "FundingManager: failed to send ETH");
         } else {
             IERC20(tokenAddress).safeTransfer(withdrawAddress, amount);
         }
@@ -261,9 +261,9 @@ contract FundingPod is
      * @param eventId 事件 ID
      * @param outcomeCount 结果数量
      */
-    function registerEvent(uint256 eventId, uint8 outcomeCount) external onlyOrderBookPod nonReentrant {
-        require(eventOutcomes[eventId].length == 0, "FundingPod: event already registered");
-        require(outcomeCount > 0, "FundingPod: empty outcomes");
+    function registerEvent(uint256 eventId, uint8 outcomeCount) external onlyOrderBookManager nonReentrant {
+        require(eventOutcomes[eventId].length == 0, "FundingManager: event already registered");
+        require(outcomeCount > 0, "FundingManager: empty outcomes");
 
         for (uint8 i = 0; i < outcomeCount; i++) {
             eventOutcomes[eventId].push(i);
@@ -288,8 +288,8 @@ contract FundingPod is
     }
 
     function _mintCompleteSet(address user, uint256 eventId, address token, uint256 amount) internal {
-        require(amount > 0, "FundingPod: amount must be greater than zero");
-        require(eventOutcomes[eventId].length > 0, "FundingPod: event not registered");
+        require(amount > 0, "FundingManager: amount must be greater than zero");
+        require(eventOutcomes[eventId].length > 0, "FundingManager: event not registered");
 
         uint256 availableBalance = userTokenBalances[user][token];
         if (availableBalance < amount) {
@@ -329,8 +329,8 @@ contract FundingPod is
     }
 
     function _burnCompleteSet(address user, uint256 eventId, address token, uint256 amount) internal {
-        require(amount > 0, "FundingPod: amount must be greater than zero");
-        require(eventOutcomes[eventId].length > 0, "FundingPod: event not registered");
+        require(amount > 0, "FundingManager: amount must be greater than zero");
+        require(eventOutcomes[eventId].length > 0, "FundingManager: event not registered");
 
         // 检查并销毁每个 outcome 的 Long token
         uint8[] storage outcomes = eventOutcomes[eventId];
@@ -371,8 +371,8 @@ contract FundingPod is
         uint256 amount,
         uint256 eventId,
         uint8 outcomeIndex
-    ) external onlyOrderBookPod nonReentrant {
-        require(amount > 0, "FundingPod: amount must be greater than zero");
+    ) external onlyOrderBookManager nonReentrant {
+        require(amount > 0, "FundingManager: amount must be greater than zero");
 
         if (isBuyOrder) {
             // 买单: 锁定 USDT
@@ -415,11 +415,11 @@ contract FundingPod is
         bool isBuyOrder,
         uint256 eventId,
         uint8 outcomeIndex
-    ) external onlyOrderBookPod nonReentrant {
+    ) external onlyOrderBookManager nonReentrant {
         if (isBuyOrder) {
             // 买单: 解锁 USDT
             uint256 lockedAmount = orderLockedUSDT[orderId];
-            require(lockedAmount > 0, "FundingPod: no locked USDT");
+            require(lockedAmount > 0, "FundingManager: no locked USDT");
 
             userTokenBalances[user][token] += lockedAmount;
             orderLockedUSDT[orderId] = 0;
@@ -428,7 +428,7 @@ contract FundingPod is
         } else {
             // 卖单: 解锁 Long Token
             uint256 lockedAmount = orderLockedLong[orderId][eventId][outcomeIndex];
-            require(lockedAmount > 0, "FundingPod: no locked Long");
+            require(lockedAmount > 0, "FundingManager: no locked Long");
 
             longPositions[user][token][eventId][outcomeIndex] += lockedAmount;
             orderLockedLong[orderId][eventId][outcomeIndex] = 0;
@@ -459,19 +459,19 @@ contract FundingPod is
         uint256 matchPrice,
         uint256 eventId,
         uint8 outcomeIndex
-    ) external onlyOrderBookPod nonReentrant {
+    ) external onlyOrderBookManager nonReentrant {
         // 计算买家支付金额
         uint256 payment = (matchAmount * matchPrice) / PRICE_PRECISION;
 
         // 买家: 消耗锁定的 USDT,获得 Long Token
-        require(orderLockedUSDT[buyOrderId] >= payment, "FundingPod: insufficient locked USDT");
+        require(orderLockedUSDT[buyOrderId] >= payment, "FundingManager: insufficient locked USDT");
         orderLockedUSDT[buyOrderId] -= payment;
         longPositions[buyer][token][eventId][outcomeIndex] += matchAmount;
 
         // 卖家: 消耗锁定的 Long Token,获得 USDT
         require(
             orderLockedLong[sellOrderId][eventId][outcomeIndex] >= matchAmount,
-            "FundingPod: insufficient locked Long"
+            "FundingManager: insufficient locked Long"
         );
         orderLockedLong[sellOrderId][eventId][outcomeIndex] -= matchAmount;
         userTokenBalances[seller][token] += payment;
@@ -499,9 +499,9 @@ contract FundingPod is
         address token,
         address[] calldata winners,
         uint256[] calldata positions
-    ) external onlyEventPod nonReentrant {
-        require(winners.length == positions.length, "FundingPod: length mismatch");
-        require(!eventSettled[eventId], "FundingPod: event already settled");
+    ) external onlyEventManager nonReentrant {
+        require(winners.length == positions.length, "FundingManager: length mismatch");
+        require(!eventSettled[eventId], "FundingManager: event already settled");
 
         // 标记事件已结算
         eventSettled[eventId] = true;
@@ -509,7 +509,7 @@ contract FundingPod is
 
         // 获取奖金池总额
         uint256 prizePool = eventPrizePool[eventId][token];
-        require(prizePool > 0, "FundingPod: no prize pool");
+        require(prizePool > 0, "FundingManager: no prize pool");
 
         // 计算总获胜 Long Token 持仓
         uint256 totalWinningLongPositions = 0;
@@ -517,7 +517,7 @@ contract FundingPod is
             totalWinningLongPositions += positions[i];
         }
 
-        require(totalWinningLongPositions > 0, "FundingPod: no winning positions");
+        require(totalWinningLongPositions > 0, "FundingManager: no winning positions");
 
         // 按比例分配奖金给获胜者
         // 在虚拟 Long Token 模型中: 1 Long Token = 1 份奖金池份额
@@ -616,21 +616,21 @@ contract FundingPod is
     // ============ 管理功能 Admin Functions ============
 
     /**
-     * @notice 更新 OrderBookPod 地址
-     * @param _orderBookPod 新地址
+     * @notice 更新 OrderBookManager 地址
+     * @param _orderBookManager 新地址
      */
-    function setOrderBookPod(address _orderBookPod) external onlyOwner nonReentrant {
-        require(_orderBookPod != address(0), "FundingPod: invalid address");
-        orderBookPod = _orderBookPod;
+    function setOrderBookManager(address _orderBookManager) external onlyOwner nonReentrant {
+        require(_orderBookManager != address(0), "FundingManager: invalid address");
+        orderBookManager = _orderBookManager;
     }
 
     /**
-     * @notice 更新 EventPod 地址
-     * @param _eventPod 新地址
+     * @notice 更新 EventManager 地址
+     * @param _eventManager 新地址
      */
-    function setEventPod(address _eventPod) external onlyOwner nonReentrant {
-        require(_eventPod != address(0), "FundingPod: invalid address");
-        eventPod = _eventPod;
+    function setEventManager(address _eventManager) external onlyOwner nonReentrant {
+        require(_eventManager != address(0), "FundingManager: invalid address");
+        eventManager = _eventManager;
     }
 
     // ============ 紧急控制 Emergency Control ============

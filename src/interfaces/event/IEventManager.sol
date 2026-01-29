@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title IEventPod
- * @notice 事件 Pod 接口 - 负责独立处理一组事件的执行单元
- * @dev 每个 EventPod 独立管理一组事件,实现事件隔离和横向扩展
+ * @title IEventManager
+ * @notice 事件 Manager 接口 - 负责独立处理一组事件的执行单元
+ * @dev 每个 EventManager 独立管理一组事件,实现事件隔离和横向扩展
  */
-interface IEventPod {
+interface IEventManager {
     /// @notice 事件状态枚举
     enum EventStatus {
         Created, // 已创建
@@ -118,12 +118,30 @@ interface IEventPod {
     function removeEventCreator(address creator) external;
 
     /**
-     * @notice 更新 OrderBookPod 地址
-     * @param _orderBookPod 新地址
+     * @notice 更新 OrderBookManager 地址
+     * @param _orderBookManager 新地址
      */
-    function setOrderBookPod(address _orderBookPod) external;
+    function setOrderBookManager(address _orderBookManager) external;
+
+    /**
+     * @notice 设置 OracleAdapter 地址
+     * @param _oracleAdapter OracleAdapter 地址
+     */
+    function setOracleAdapter(address _oracleAdapter) external;
+
+    /**
+     * @notice 暂停合约
+     */
+    function pause() external;
+
+    /**
+     * @notice 解除暂停
+     */
+    function unpause() external;
 
     // ============ 查询功能 View Functions ============
+
+    function getEvents() external view returns (Event[] memory);
 
     /**
      * @notice 获取事件详情
@@ -139,6 +157,8 @@ interface IEventPod {
      */
     function getEventStatus(uint256 eventId) external view returns (EventStatus);
 
+    function getOutcomes(uint256 eventId) external view returns (Outcome[] memory);
+
     /**
      * @notice 获取事件结果选项
      * @param eventId 事件 ID
@@ -148,8 +168,27 @@ interface IEventPod {
     function getOutcome(uint256 eventId, uint8 outcomeIndex) external view returns (Outcome memory);
 
     /**
-     * @notice 列出所有活跃事件 ID
-     * @return eventIds 活跃事件 ID 数组
+     * @notice 获取 OrderBookManager 地址
      */
-    function listActiveEvents() external view returns (uint256[] memory);
+    function orderBookManager() external view returns (address);
+
+    /**
+     * @notice 获取 OracleAdapter 地址
+     */
+    function oracleAdapter() external view returns (address);
+
+    /**
+     * @notice 查询是否为事件创建者
+     */
+    function isEventCreator(address creator) external view returns (bool);
+
+    /**
+     * @notice 获取下一个事件 ID
+     */
+    function nextEventId() external view returns (uint256);
+
+    /**
+     * @notice 获取事件对应的预言机请求 ID
+     */
+    function eventOracleRequests(uint256 eventId) external view returns (bytes32);
 }

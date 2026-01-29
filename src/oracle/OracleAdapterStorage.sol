@@ -43,8 +43,8 @@ abstract contract OracleAdapterStorage is IOracle {
     /// @notice 授权的预言机列表
     address[] internal authorizedOraclesList;
 
-    /// @notice 授权的 EventPods 映射 (for direct pod interaction)
-    mapping(address => bool) public authorizedEventPods;
+    /// @notice 授权的 EventManagers 映射 (for direct manager interaction)
+    mapping(address => bool) public authorizedEventManagers;
 
     /// @notice 预言机信誉分数: oracle => score
     mapping(address => uint256) public oracleReputation;
@@ -57,7 +57,7 @@ abstract contract OracleAdapterStorage is IOracle {
     /// @notice 最小确认数(多预言机共识)
     uint256 public minConfirmations;
 
-    /// @notice OracleConsumer 地址(EventPod)
+    /// @notice OracleConsumer 地址(EventManager)
     address public oracleConsumer;
 
     // ============ 统计数据 Statistics ============

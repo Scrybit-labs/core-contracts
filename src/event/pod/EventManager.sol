@@ -7,69 +7,60 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "../../interfaces/event/IEventPod.sol";
-import "../../interfaces/event/IOrderBookPod.sol";
+import "../../interfaces/event/IEventManager.sol";
+import "../../interfaces/event/IOrderBookManager.sol";
 import "../../interfaces/oracle/IOracle.sol";
 
 /**
- * @title EventPod
- * @notice 事件 Pod - 负责独立处理一组事件的执行单元
- * @dev 每个 EventPod 独立管理一组事件,实现事件隔离和横向扩展
+ * @title EventManager
+ * @notice 事件 Manager - 负责独立处理一组事件的执行单元
+ * @dev 每个 EventManager 独立管理一组事件,实现事件隔离和横向扩展
  */
-contract EventPod is
+contract EventManager is
     Initializable,
     OwnableUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuard,
-    IEventPod,
+    IEventManager,
     IOracleConsumer
 {
     // ============ Modifiers ============
 
     /// @notice 仅事件创建者或所有者可调用
     modifier onlyEventCreator() {
-        require(msg.sender == owner() || isEventCreator[msg.sender], "EventPod: not authorized");
+        require(msg.sender == owner() || isEventCreator[msg.sender], "EventManager: not authorized");
         _;
     }
 
     /// @notice 仅授权的预言机可调用
     modifier onlyAuthorizedOracle() {
-        require(msg.sender == oracleAdapter, "EventPod: only authorized oracle adapter");
+        require(msg.sender == oracleAdapter, "EventManager: only authorized oracle adapter");
         _;
     }
 
     /// @notice 事件必须存在
     modifier eventMustExist(uint256 eventId) {
-        require(eventExists[eventId], "EventPod: event does not exist");
+        require(eventId < events.length, "EventManager: event does not exist");
         _;
     }
 
     /// @notice 仅事件创建者或所有者可操作对应事件
     modifier onlyEventCreatorOrOwner(uint256 eventId) {
-        require(msg.sender == owner() || events[eventId].creator == msg.sender, "EventPod: not event creator");
+        require(msg.sender == owner() || events[eventId].creator == msg.sender, "EventManager: not event creator");
         _;
     }
 
     // ============ 状态变量 State Variables ============
 
-    /// @notice 事件存储映射: eventId => Event
-    mapping(uint256 => Event) internal events;
-
-    /// @notice 事件是否存在映射
-    mapping(uint256 => bool) public eventExists;
-
-    /// @notice 活跃事件 ID 数组
-    uint256[] internal activeEventIds;
-
-    /// @notice 事件在活跃数组中的索引映射
-    mapping(uint256 => uint256) internal activeEventIndex;
+    /// @notice 事件存储数组
+    Event[] internal events;
 
     /// @notice 事件是否在活跃列表中
     mapping(uint256 => bool) internal isEventActive;
 
-    /// @notice OrderBookPod 合约地址(用于触发结算)
-    address public orderBookPod;
+    /// @notice OrderBookManager 合约地址(用于触发结算)
+    address public orderBookManager;
 
     /// @notice OracleAdapter 合约地址(用于验证预言机)
     address public oracleAdapter;
@@ -77,7 +68,7 @@ contract EventPod is
     /// @notice 事件创建者白名单
     mapping(address => bool) public isEventCreator;
 
-    /// @notice Per-pod event counter
+    /// @notice Per-manager event counter
     uint256 public nextEventId;
 
     /// @notice Event oracle request tracking: eventId => requestId
@@ -95,15 +86,14 @@ contract EventPod is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _orderBookPod OrderBookPod 合约地址
+     * @param _orderBookManager OrderBookManager 合约地址
      * @param _oracleAdapter OracleAdapter 合约地址
      */
-    function initialize(address initialOwner, address _orderBookPod, address _oracleAdapter) external initializer {
+    function initialize(address initialOwner, address _orderBookManager, address _oracleAdapter) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        orderBookPod = _orderBookPod;
+        orderBookManager = _orderBookManager;
         oracleAdapter = _oracleAdapter;
-        nextEventId = 1; // Start from 1
 
         // Owner is an event creator by default
         isEventCreator[initialOwner] = true;
@@ -134,17 +124,17 @@ contract EventPod is
         Outcome[] calldata outcomes
     ) external onlyEventCreator nonReentrant returns (uint256 eventId) {
         // Validate parameters
-        require(bytes(title).length > 0, "EventPod: empty title");
-        require(deadline > block.timestamp, "EventPod: deadline must be in future");
-        require(settlementTime > deadline, "EventPod: settlementTime must be after deadline");
-        require(outcomes.length >= 2, "EventPod: at least 2 outcomes required");
-        require(outcomes.length <= 32, "EventPod: max 32 outcomes");
+        require(bytes(title).length > 0, "EventManager: empty title");
+        require(deadline > block.timestamp, "EventManager: deadline must be in future");
+        require(settlementTime > deadline, "EventManager: settlementTime must be after deadline");
+        require(outcomes.length >= 2, "EventManager: at least 2 outcomes required");
+        require(outcomes.length <= 32, "EventManager: max 32 outcomes");
 
         // Generate event ID
-        eventId = nextEventId++;
+        eventId = events.length;
 
         // Create event
-        Event storage newEvent = events[eventId];
+        Event memory newEvent;
         newEvent.eventId = eventId;
         newEvent.title = title;
         newEvent.description = description;
@@ -154,9 +144,7 @@ contract EventPod is
         newEvent.creator = msg.sender;
         newEvent.winningOutcomeIndex = 0;
         newEvent.outcomes = outcomes;
-
-        // Mark event exists
-        eventExists[eventId] = true;
+        events.push(newEvent);
 
         emit EventCreated(eventId, title, deadline, outcomes.length);
     }
@@ -171,10 +159,10 @@ contract EventPod is
         uint256 eventId
     ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) nonReentrant returns (bytes32 requestId) {
         Event storage evt = events[eventId];
-        require(evt.status == EventStatus.Active, "EventPod: event not active");
-        require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
+        require(evt.status == EventStatus.Active, "EventManager: event not active");
+        require(block.timestamp >= evt.settlementTime, "EventManager: settlement time not reached");
 
-        require(oracleAdapter != address(0), "EventPod: oracleAdapter not set");
+        require(oracleAdapter != address(0), "EventManager: oracleAdapter not set");
 
         requestId = IOracle(oracleAdapter).requestEventResult(eventId, evt.description);
 
@@ -195,16 +183,9 @@ contract EventPod is
         EventStatus oldStatus = evt.status;
 
         // 状态机验证
-        require(_isValidStatusTransition(oldStatus, newStatus), "EventPod: invalid status transition");
+        require(_isValidStatusTransition(oldStatus, newStatus), "EventManager: invalid status transition");
 
         evt.status = newStatus;
-
-        // 活跃列表维护
-        if (newStatus == EventStatus.Active) {
-            _addToActiveList(eventId);
-        } else if (newStatus == EventStatus.Settled || newStatus == EventStatus.Cancelled) {
-            _removeFromActiveList(eventId);
-        }
 
         emit EventStatusChanged(eventId, oldStatus, newStatus);
     }
@@ -224,7 +205,7 @@ contract EventPod is
     }
 
     /**
-     * @notice 结算事件 (实现 IEventPod 接口,兼容层)
+     * @notice 结算事件 (实现 IEventManager 接口,兼容层)
      * @param eventId 事件 ID
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
      * @param proof 预言机证明数据
@@ -246,11 +227,11 @@ contract EventPod is
     function _settleEvent(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) internal {
         Event storage evt = events[eventId];
 
-        require(evt.status == EventStatus.Active, "EventPod: event not active");
-        require(block.timestamp >= evt.settlementTime, "EventPod: settlement time not reached");
+        require(evt.status == EventStatus.Active, "EventManager: event not active");
+        require(block.timestamp >= evt.settlementTime, "EventManager: settlement time not reached");
 
         // 验证 winningOutcomeIndex 是否有效
-        require(winningOutcomeIndex < uint8(evt.outcomes.length), "EventPod: invalid winning outcome index");
+        require(winningOutcomeIndex < uint8(evt.outcomes.length), "EventManager: invalid winning outcome index");
 
         // 验证 Merkle Proof
         _verifyMerkleProof(eventId, winningOutcomeIndex, proof);
@@ -259,12 +240,9 @@ contract EventPod is
         evt.status = EventStatus.Settled;
         evt.winningOutcomeIndex = winningOutcomeIndex;
 
-        // 从活跃列表移除
-        _removeFromActiveList(eventId);
-
-        require(orderBookPod != address(0), "EventPod: orderBookPod not set");
-        IOrderBookPod orderBookPodInstance = IOrderBookPod(orderBookPod);
-        orderBookPodInstance.settleEvent(eventId, winningOutcomeIndex);
+        require(orderBookManager != address(0), "EventManager: orderBookManager not set");
+        IOrderBookManager orderBookManagerInstance = IOrderBookManager(orderBookManager);
+        orderBookManagerInstance.settleEvent(eventId, winningOutcomeIndex);
 
         emit EventSettled(eventId, winningOutcomeIndex, block.timestamp);
         emit OracleResultReceived(eventId, winningOutcomeIndex, msg.sender);
@@ -283,50 +261,18 @@ contract EventPod is
 
         require(
             evt.status == EventStatus.Created || evt.status == EventStatus.Active,
-            "EventPod: cannot cancel settled event"
+            "EventManager: cannot cancel settled event"
         );
 
         evt.status = EventStatus.Cancelled;
 
-        // 从活跃列表移除
-        _removeFromActiveList(eventId);
-
         emit EventCancelled(eventId, reason);
     }
 
-    // ============ 内部函数 Internal Functions ============
+    // ============ 内部函数 Internal Functions ===========
 
-    /**
-     * @notice 添加事件到活跃列表
-     * @param eventId 事件 ID
-     */
-    function _addToActiveList(uint256 eventId) internal {
-        if (!isEventActive[eventId]) {
-            activeEventIndex[eventId] = activeEventIds.length;
-            activeEventIds.push(eventId);
-            isEventActive[eventId] = true;
-        }
-    }
-
-    /**
-     * @notice 从活跃列表移除事件
-     * @param eventId 事件 ID
-     */
-    function _removeFromActiveList(uint256 eventId) internal {
-        if (isEventActive[eventId]) {
-            uint256 index = activeEventIndex[eventId];
-            uint256 lastIndex = activeEventIds.length - 1;
-
-            if (index != lastIndex) {
-                uint256 lastEventId = activeEventIds[lastIndex];
-                activeEventIds[index] = lastEventId;
-                activeEventIndex[lastEventId] = index;
-            }
-
-            activeEventIds.pop();
-            delete activeEventIndex[eventId];
-            isEventActive[eventId] = false;
-        }
+    function _isEventActive(uint256 eventId) internal view eventMustExist(eventId) returns (bool) {
+        return events[eventId].status == EventStatus.Active;
     }
 
     /**
@@ -371,7 +317,7 @@ contract EventPod is
 
         // 验证 Merkle Proof
         bool isValid = _verifyProof(merkleProof, expectedRoot, leaf);
-        require(isValid, "EventPod: invalid merkle proof");
+        require(isValid, "EventManager: invalid merkle proof");
 
         // 注意: 这里假设 OracleAdapter 已经验证了 root 的有效性
         // 在生产环境中,可以添加对 OracleAdapter.verifyRoot(expectedRoot) 的调用
@@ -405,6 +351,10 @@ contract EventPod is
 
     // ============ 查询功能 View Functions ============
 
+    function getEvents() external view returns (Event[] memory _events) {
+        _events = events;
+    }
+
     /**
      * @notice 获取事件详情
      * @param eventId 事件 ID
@@ -423,6 +373,11 @@ contract EventPod is
         return events[eventId].status;
     }
 
+    function getOutcomes(uint256 eventId) external view eventMustExist(eventId) returns (Outcome[] memory) {
+        Event storage evt = events[eventId];
+        return evt.outcomes;
+    }
+
     /**
      * @notice 获取事件结果选项
      * @param eventId 事件 ID
@@ -434,7 +389,7 @@ contract EventPod is
         uint8 outcomeIndex
     ) external view eventMustExist(eventId) returns (Outcome memory) {
         Event storage evt = events[eventId];
-        require(outcomeIndex < uint8(evt.outcomes.length), "EventPod: outcome index out of bounds");
+        require(outcomeIndex < uint8(evt.outcomes.length), "EventManager: outcome index out of bounds");
         return evt.outcomes[outcomeIndex];
     }
 
@@ -442,9 +397,6 @@ contract EventPod is
      * @notice 列出所有活跃事件 ID
      * @return eventIds 活跃事件 ID 数组
      */
-    function listActiveEvents() external view returns (uint256[] memory) {
-        return activeEventIds;
-    }
 
     // ============ 管理功能 Admin Functions ============
 
@@ -453,7 +405,7 @@ contract EventPod is
      * @param creator 创建者地址
      */
     function addEventCreator(address creator) external onlyOwner nonReentrant {
-        require(creator != address(0), "EventPod: invalid address");
+        require(creator != address(0), "EventManager: invalid address");
         isEventCreator[creator] = true;
         emit EventCreatorAdded(creator);
     }
@@ -463,18 +415,18 @@ contract EventPod is
      * @param creator 创建者地址
      */
     function removeEventCreator(address creator) external onlyOwner nonReentrant {
-        require(isEventCreator[creator], "EventPod: not an event creator");
+        require(isEventCreator[creator], "EventManager: not an event creator");
         isEventCreator[creator] = false;
         emit EventCreatorRemoved(creator);
     }
 
     /**
-     * @notice 更新 OrderBookPod 地址
-     * @param _orderBookPod 新地址
+     * @notice 更新 OrderBookManager 地址
+     * @param _orderBookManager 新地址
      */
-    function setOrderBookPod(address _orderBookPod) external onlyOwner nonReentrant {
-        require(_orderBookPod != address(0), "EventPod: invalid address");
-        orderBookPod = _orderBookPod;
+    function setOrderBookManager(address _orderBookManager) external onlyOwner nonReentrant {
+        require(_orderBookManager != address(0), "EventManager: invalid address");
+        orderBookManager = _orderBookManager;
     }
 
     /**
@@ -482,7 +434,7 @@ contract EventPod is
      * @param _oracleAdapter OracleAdapter 地址
      */
     function setOracleAdapter(address _oracleAdapter) external onlyOwner nonReentrant {
-        require(_oracleAdapter != address(0), "EventPod: invalid address");
+        require(_oracleAdapter != address(0), "EventManager: invalid address");
         oracleAdapter = _oracleAdapter;
     }
 

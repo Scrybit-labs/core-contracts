@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title IFeeVaultPod
- * @notice 手续费金库 Pod 接口 - 负责手续费收取和分配
- * @dev 每个 FeeVaultPod 独立管理一组事件的手续费
+ * @title IFeeVaultManager
+ * @notice 手续费金库 Manager 接口 - 负责手续费收取和分配
+ * @dev 每个 FeeVaultManager 独立管理一组事件的手续费
  */
-interface IFeeVaultPod {
+interface IFeeVaultManager {
     // ============ 事件 Events ============
 
     /// @notice 手续费收取事件
