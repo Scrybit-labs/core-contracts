@@ -7,9 +7,9 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "../../interfaces/event/IEventManager.sol";
-import "../../interfaces/event/IOrderBookManager.sol";
-import "../../interfaces/oracle/IOracle.sol";
+import "../interfaces/core/IEventManager.sol";
+import "../interfaces/core/IOrderBookManager.sol";
+import "../interfaces/oracle/IOracle.sol";
 
 /**
  * @title EventManager
@@ -365,6 +365,14 @@ contract EventManager is
 
     function getEvents() external view returns (Event[] memory _events) {
         _events = events;
+    }
+
+    /**
+     * @notice 获取下一个事件 ID（即当前事件总数）
+     * @return 下一个事件 ID
+     */
+    function nextEventId() external view returns (uint256) {
+        return events.length;
     }
 
     /**

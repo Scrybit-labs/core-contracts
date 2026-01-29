@@ -3,10 +3,10 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 
-import "../src/event/pod/EventManager.sol";
-import "../src/event/pod/OrderBookManager.sol";
-import "../src/event/pod/FundingManager.sol";
-import "../src/event/pod/FeeVaultManager.sol";
+import "../src/core/EventManager.sol";
+import "../src/core/OrderBookManager.sol";
+import "../src/core/FundingManager.sol";
+import "../src/core/FeeVaultManager.sol";
 
 /**
  * @title UpgradeManagers

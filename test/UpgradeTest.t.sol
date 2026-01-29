@@ -6,11 +6,11 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import "../src/event/pod/EventManager.sol";
-import "../src/event/pod/OrderBookManager.sol";
-import "../src/event/pod/FundingManager.sol";
-import "../src/event/pod/FeeVaultManager.sol";
-import "../src/interfaces/event/IEventManager.sol";
+import "../src/core/EventManager.sol";
+import "../src/core/OrderBookManager.sol";
+import "../src/core/FundingManager.sol";
+import "../src/core/FeeVaultManager.sol";
+import "../src/interfaces/core/IEventManager.sol";
 
 contract EventManagerV2 is EventManager {
     function version() external pure returns (uint256) {
@@ -59,19 +59,25 @@ contract UpgradeTest is Test {
         eventManager = EventManager(address(new ERC1967Proxy(address(eventManagerImpl), eventManagerInitData)));
 
         bytes memory feeVaultManagerInitData = abi.encodeCall(FeeVaultManager.initialize, (owner, address(0)));
-        feeVaultManager = FeeVaultManager(payable(address(new ERC1967Proxy(address(feeVaultManagerImpl), feeVaultManagerInitData))));
+        feeVaultManager = FeeVaultManager(
+            payable(address(new ERC1967Proxy(address(feeVaultManagerImpl), feeVaultManagerInitData)))
+        );
 
         bytes memory fundingManagerInitData = abi.encodeCall(
             FundingManager.initialize,
             (owner, address(0), address(eventManager))
         );
-        fundingManager = FundingManager(payable(address(new ERC1967Proxy(address(fundingManagerImpl), fundingManagerInitData))));
+        fundingManager = FundingManager(
+            payable(address(new ERC1967Proxy(address(fundingManagerImpl), fundingManagerInitData)))
+        );
 
         bytes memory orderBookManagerInitData = abi.encodeCall(
             OrderBookManager.initialize,
             (owner, address(eventManager), address(fundingManager), address(feeVaultManager))
         );
-        orderBookManager = OrderBookManager(address(new ERC1967Proxy(address(orderBookManagerImpl), orderBookManagerInitData)));
+        orderBookManager = OrderBookManager(
+            address(new ERC1967Proxy(address(orderBookManagerImpl), orderBookManagerInitData))
+        );
 
         eventManager.setOrderBookManager(address(orderBookManager));
         fundingManager.setOrderBookManager(address(orderBookManager));
@@ -124,9 +130,7 @@ contract UpgradeTest is Test {
         address attacker = address(0xBEEF);
 
         vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, attacker)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, attacker));
         eventManager.upgradeToAndCall(address(newEventManagerImpl), "");
     }
 

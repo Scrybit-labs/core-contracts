@@ -7,8 +7,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "../../interfaces/event/IFeeVaultManager.sol";
-import "../../interfaces/event/IFundingManager.sol";
+import "../interfaces/core/IFeeVaultManager.sol";
+import "../interfaces/core/IFundingManager.sol";
 
 /**
  * @title FeeVaultManager

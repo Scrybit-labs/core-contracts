@@ -6,10 +6,10 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import "../src/oracle/OracleManager.sol";
 import "../src/oracle/OracleAdapter.sol";
-import "../src/event/pod/EventManager.sol";
-import "../src/event/pod/OrderBookManager.sol";
-import "../src/event/pod/FundingManager.sol";
-import "../src/event/pod/FeeVaultManager.sol";
+import "../src/core/EventManager.sol";
+import "../src/core/OrderBookManager.sol";
+import "../src/core/FundingManager.sol";
+import "../src/core/FeeVaultManager.sol";
 
 import "./config/DeploymentConfig.sol";
 
@@ -40,8 +40,9 @@ contract SimpleDeploy is Script, DeploymentConfig {
         // OracleAdapter (proxy, consumer wired later)
         OracleAdapter oracleAdapterImpl = new OracleAdapter();
         initData = abi.encodeCall(OracleAdapter.initialize, (config.initialOwner, address(0)));
-        OracleAdapter oracleAdapter =
-            OracleAdapter(payable(address(new ERC1967Proxy(address(oracleAdapterImpl), initData))));
+        OracleAdapter oracleAdapter = OracleAdapter(
+            payable(address(new ERC1967Proxy(address(oracleAdapterImpl), initData)))
+        );
 
         // Deploy Manager implementations
         console.log("Deploying Manager implementations...");
@@ -63,25 +64,33 @@ contract SimpleDeploy is Script, DeploymentConfig {
             EventManager.initialize,
             (config.initialOwner, address(0), address(oracleAdapter))
         );
-        EventManager eventManager = EventManager(address(new ERC1967Proxy(address(eventManagerImpl), eventManagerInitData)));
+        EventManager eventManager = EventManager(
+            address(new ERC1967Proxy(address(eventManagerImpl), eventManagerInitData))
+        );
 
-        bytes memory feeVaultManagerInitData = abi.encodeCall(FeeVaultManager.initialize, (config.initialOwner, address(0)));
-        FeeVaultManager feeVaultManager =
-            FeeVaultManager(payable(address(new ERC1967Proxy(address(feeVaultManagerImpl), feeVaultManagerInitData))));
+        bytes memory feeVaultManagerInitData = abi.encodeCall(
+            FeeVaultManager.initialize,
+            (config.initialOwner, address(0))
+        );
+        FeeVaultManager feeVaultManager = FeeVaultManager(
+            payable(address(new ERC1967Proxy(address(feeVaultManagerImpl), feeVaultManagerInitData)))
+        );
 
         bytes memory fundingManagerInitData = abi.encodeCall(
             FundingManager.initialize,
             (config.initialOwner, address(0), address(eventManager))
         );
-        FundingManager fundingManager =
-            FundingManager(payable(address(new ERC1967Proxy(address(fundingManagerImpl), fundingManagerInitData))));
+        FundingManager fundingManager = FundingManager(
+            payable(address(new ERC1967Proxy(address(fundingManagerImpl), fundingManagerInitData)))
+        );
 
         bytes memory orderBookManagerInitData = abi.encodeCall(
             OrderBookManager.initialize,
             (config.initialOwner, address(eventManager), address(fundingManager), address(feeVaultManager))
         );
-        OrderBookManager orderBookManager =
-            OrderBookManager(address(new ERC1967Proxy(address(orderBookManagerImpl), orderBookManagerInitData)));
+        OrderBookManager orderBookManager = OrderBookManager(
+            address(new ERC1967Proxy(address(orderBookManagerImpl), orderBookManagerInitData))
+        );
 
         console.log("EventManager proxy:", address(eventManager));
         console.log("OrderBookManager proxy:", address(orderBookManager));
