@@ -56,9 +56,6 @@ contract EventManager is
     /// @notice 事件存储数组
     Event[] internal events;
 
-    /// @notice 事件是否在活跃列表中
-    mapping(uint256 => bool) internal isEventActive;
-
     /// @notice OrderBookManager 合约地址(用于触发结算)
     address public orderBookManager;
 
@@ -68,14 +65,21 @@ contract EventManager is
     /// @notice 事件创建者白名单
     mapping(address => bool) public isEventCreator;
 
-    /// @notice Per-manager event counter
-    uint256 public nextEventId;
-
     /// @notice Event oracle request tracking: eventId => requestId
     mapping(uint256 => bytes32) public eventOracleRequests;
 
     // ===== Upgradeable storage gap =====
     uint256[40] private __gap;
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     // ============ Constructor & Initializer ============
 
@@ -98,12 +102,6 @@ contract EventManager is
         // Owner is an event creator by default
         isEventCreator[initialOwner] = true;
     }
-
-    /**
-     * @notice Authorizes upgrade to new implementation
-     * @dev Only owner can upgrade (UUPS pattern)
-     */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ 核心功能 Functions ============
 
@@ -187,6 +185,14 @@ contract EventManager is
 
         evt.status = newStatus;
 
+        if (newStatus == EventStatus.Active) {
+            require(orderBookManager != address(0), "EventManager: orderBookManager not set");
+            IOrderBookManager(orderBookManager).registerEvent(eventId, uint8(evt.outcomes.length));
+        } else if (newStatus == EventStatus.Cancelled) {
+            require(orderBookManager != address(0), "EventManager: orderBookManager not set");
+            IOrderBookManager(orderBookManager).deactivateEvent(eventId);
+        }
+
         emit EventStatusChanged(eventId, oldStatus, newStatus);
     }
 
@@ -264,7 +270,13 @@ contract EventManager is
             "EventManager: cannot cancel settled event"
         );
 
+        EventStatus oldStatus = evt.status;
         evt.status = EventStatus.Cancelled;
+
+        if (oldStatus == EventStatus.Active) {
+            require(orderBookManager != address(0), "EventManager: orderBookManager not set");
+            IOrderBookManager(orderBookManager).deactivateEvent(eventId);
+        }
 
         emit EventCancelled(eventId, reason);
     }
@@ -436,15 +448,5 @@ contract EventManager is
     function setOracleAdapter(address _oracleAdapter) external onlyOwner nonReentrant {
         require(_oracleAdapter != address(0), "EventManager: invalid address");
         oracleAdapter = _oracleAdapter;
-    }
-
-    // ============ Pausable Admin ============
-
-    function pause() external onlyOwner nonReentrant {
-        _pause();
-    }
-
-    function unpause() external onlyOwner nonReentrant {
-        _unpause();
     }
 }

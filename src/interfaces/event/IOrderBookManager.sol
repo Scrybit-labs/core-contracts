@@ -54,6 +54,8 @@ interface IOrderBookManager {
 
     event EventAdded(uint256 indexed eventId, uint8 outcomeCount);
 
+    event EventDeactivated(uint256 indexed eventId);
+
     error EventNotSupported(uint256 eventId);
     error OutcomeNotSupported(uint256 eventId, uint8 outcomeIndex);
     error EventAlreadySettled(uint256 eventId);
@@ -88,7 +90,9 @@ interface IOrderBookManager {
 
     function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external;
 
-    function addEvent(uint256 eventId, uint8 outcomeCount) external;
+    function registerEvent(uint256 eventId, uint8 outcomeCount) external;
+
+    function deactivateEvent(uint256 eventId) external;
 
     function getBestBid(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount);
 

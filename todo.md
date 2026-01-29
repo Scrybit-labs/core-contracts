@@ -28,3 +28,10 @@
         - [ ] Yes
             - Priority(1-highest -> 5-lowest): 2
         - [ ] No
+
+2. Auto resolve winning shares
+    - Motivation: Better UX, But the implementation is tricky, I can only think of off-chain oriented solution at the moment
+    - Verdict
+        - [ ] Yes
+            - Priority(1-highest -> 5-lowest): 5
+        - [ ] No

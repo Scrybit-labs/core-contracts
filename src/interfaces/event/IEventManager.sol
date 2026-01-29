@@ -129,16 +129,6 @@ interface IEventManager {
      */
     function setOracleAdapter(address _oracleAdapter) external;
 
-    /**
-     * @notice 暂停合约
-     */
-    function pause() external;
-
-    /**
-     * @notice 解除暂停
-     */
-    function unpause() external;
-
     // ============ 查询功能 View Functions ============
 
     function getEvents() external view returns (Event[] memory);

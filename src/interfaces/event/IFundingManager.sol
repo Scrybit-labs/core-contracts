@@ -14,6 +14,9 @@ interface IFundingManager {
     /// @notice ETH 地址表示
     function ETHAddress() external view returns (address);
 
+    /// @notice USD 统一精度(1e18 = 1 USD)
+    function USD_PRECISION() external view returns (uint256);
+
     // ============ 事件 Events ============
 
     /// @notice 用户入金事件
@@ -22,64 +25,45 @@ interface IFundingManager {
     /// @notice 用户提现事件
     event WithdrawToken(address indexed tokenAddress, address indexed sender, address withdrawAddress, uint256 amount);
 
-    /// @notice Token 支持状态变更事件
-    event SetSupportTokenEvent(address indexed token, bool isSupport, uint256 chainId);
+    /// @notice Token 配置事件
+    event TokenConfigured(address indexed token, uint8 decimals, bool enabled, uint256 chainId);
 
     /// @notice 资金锁定事件
-    event FundsLocked(
-        address indexed user,
-        address indexed token,
-        uint256 amount,
-        uint256 indexed eventId,
-        uint8 outcomeIndex
-    );
+    event FundsLocked(address indexed user, uint256 amount, uint256 indexed eventId, uint8 outcomeIndex);
 
     /// @notice 资金解锁事件
-    event FundsUnlocked(
-        address indexed user,
-        address indexed token,
-        uint256 amount,
-        uint256 indexed eventId,
-        uint8 outcomeIndex
-    );
+    event FundsUnlocked(address indexed user, uint256 amount, uint256 indexed eventId, uint8 outcomeIndex);
 
     /// @notice 订单结算事件
-    event OrderSettled(uint256 indexed buyOrderId, uint256 indexed sellOrderId, uint256 amount, address indexed token);
+    event OrderSettled(uint256 indexed buyOrderId, uint256 indexed sellOrderId, uint256 amount);
 
     /// @notice 事件结算事件
-    event EventSettled(
-        uint256 indexed eventId,
-        uint8 winningOutcomeIndex,
-        address indexed token,
-        uint256 prizePool,
-        uint256 winnersCount
-    );
+    event EventSettled(uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 prizePool, uint256 winnersCount);
+
+    /// @notice 事件标记已结算事件
+    event EventMarkedSettled(uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 prizePool);
+
+    /// @notice 用户领取奖金事件
+    event WinningsRedeemed(address indexed user, uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 amount);
 
     /// @notice 完整集合铸造事件
-    event CompleteSetMinted(address indexed user, uint256 indexed eventId, address indexed token, uint256 amount);
+    event CompleteSetMinted(address indexed user, uint256 indexed eventId, uint256 amount);
 
     /// @notice 完整集合销毁事件
-    event CompleteSetBurned(address indexed user, uint256 indexed eventId, address indexed token, uint256 amount);
+    event CompleteSetBurned(address indexed user, uint256 indexed eventId, uint256 amount);
 
     /// @notice Long Token 转移事件
-    event LongTransferred(
-        address indexed from,
-        address indexed to,
-        uint256 indexed eventId,
-        uint8 outcomeIndex,
-        address token,
-        uint256 amount
-    );
+    event LongTransferred(address indexed from, address indexed to, uint256 indexed eventId, uint8 outcomeIndex, uint256 amount);
 
     // ============ 错误 Errors ============
 
     error LessThanZero(uint256 amount);
-    error TokenIsNotSupported(address ERC20Address);
-    error InsufficientBalance(address user, address token, uint256 required, uint256 available);
-    error InsufficientLockedBalance(address user, address token, uint256 eventId, uint8 outcomeIndex);
+    error TokenIsNotSupported(address tokenAddress);
+    error InvalidTokenDecimals(uint8 decimals);
+    error InsufficientUsdBalance(address user, uint256 required, uint256 available);
+    error InsufficientTokenLiquidity(address token, uint256 required, uint256 available);
+    error InsufficientLongPosition(address user, uint256 eventId, uint8 outcomeIndex);
     error EventAlreadySettled(uint256 eventId);
-    error InvalidWinningOutcome(uint256 eventId, uint8 outcomeIndex);
-    error InsufficientLongPosition(address user, address token, uint256 eventId, uint8 outcomeIndex);
     error EventNotRegistered(uint256 eventId);
 
     // ============ 基础功能 Basic Functions ============
@@ -106,16 +90,53 @@ interface IFundingManager {
     /**
      * @notice 用户直接提现
      * @param tokenAddress Token 地址
-     * @param amount 金额
+     * @param usdAmount USD 数量 (1e18)
      */
-    function withdrawDirect(address tokenAddress, uint256 amount) external;
+    function withdrawDirect(address tokenAddress, uint256 usdAmount) external;
 
     /**
-     * @notice 设置支持的 ERC20 Token
-     * @param ERC20Address Token 地址
-     * @param isValid 是否支持
+     * @notice 用户按 Token 数量直接提现
+     * @param tokenAddress Token 地址
+     * @param tokenAmount Token 数量
      */
-    function setSupportERC20Token(address ERC20Address, bool isValid) external;
+    function withdrawTokenAmount(address tokenAddress, uint256 tokenAmount) external;
+
+    /**
+     * @notice 配置支持的 Token
+     * @param token Token 地址
+     * @param decimals Token decimals
+     * @param enabled 是否启用
+     */
+    function configureToken(address token, uint8 decimals, bool enabled) external;
+
+    /**
+     * @notice 将 Token 数量归一化为 USD (1e18)
+     * @param token Token 地址
+     * @param rawAmount Token 数量
+     */
+    function normalizeToUsd(address token, uint256 rawAmount) external view returns (uint256);
+
+    /**
+     * @notice 将 USD 数量反归一化为 Token 数量
+     * @param token Token 地址
+     * @param usdAmount USD 数量 (1e18)
+     */
+    function denormalizeFromUsd(address token, uint256 usdAmount) external view returns (uint256);
+
+    /**
+     * @notice FeeVaultManager 收取协议费用(扣减用户 USD 余额)
+     * @param payer 支付者地址
+     * @param usdAmount USD 数量 (1e18)
+     */
+    function collectProtocolFee(address payer, uint256 usdAmount) external;
+
+    /**
+     * @notice FeeVaultManager 提取协议流动性
+     * @param token Token 地址
+     * @param amount Token 数量
+     * @param recipient 接收地址
+     */
+    function withdrawLiquidity(address token, uint256 amount, address recipient) external;
 
     // ============ 核心资金管理 Core Funding Functions ============
 
@@ -129,33 +150,29 @@ interface IFundingManager {
     /**
      * @notice 用户直接铸造完整集合
      * @param eventId 事件 ID
-     * @param token Token 地址
-     * @param amount 铸造数量
+     * @param usdAmount 铸造数量 (USD, 1e18)
      */
-    function mintCompleteSetDirect(uint256 eventId, address token, uint256 amount) external;
+    function mintCompleteSetDirect(uint256 eventId, uint256 usdAmount) external;
 
     /**
      * @notice 用户直接销毁完整集合
      * @param eventId 事件 ID
-     * @param token Token 地址
-     * @param amount 销毁数量
+     * @param usdAmount 销毁数量 (USD, 1e18)
      */
-    function burnCompleteSetDirect(uint256 eventId, address token, uint256 amount) external;
+    function burnCompleteSetDirect(uint256 eventId, uint256 usdAmount) external;
 
     /**
      * @notice 下单时锁定资金或 Long Token
      * @param user 用户地址
      * @param orderId 订单 ID
-     * @param token Token 地址
      * @param isBuyOrder 是否为买单
-     * @param amount 锁定数量 (买单锁 USDT,卖单锁 Long)
+     * @param amount 锁定数量 (买单锁 USD,卖单锁 Long)
      * @param eventId 事件 ID
      * @param outcomeIndex 结果索引
      */
     function lockForOrder(
         address user,
         uint256 orderId,
-        address token,
         bool isBuyOrder,
         uint256 amount,
         uint256 eventId,
@@ -166,7 +183,6 @@ interface IFundingManager {
      * @notice 撤单时解锁资金或 Long Token
      * @param user 用户地址
      * @param orderId 订单 ID
-     * @param token Token 地址
      * @param isBuyOrder 是否为买单
      * @param eventId 事件 ID
      * @param outcomeIndex 结果索引
@@ -174,19 +190,17 @@ interface IFundingManager {
     function unlockForOrder(
         address user,
         uint256 orderId,
-        address token,
         bool isBuyOrder,
         uint256 eventId,
         uint8 outcomeIndex
     ) external;
 
     /**
-     * @notice 撮合成交时结算资金 (买家用 USDT 换 Long,卖家用 Long 换 USDT)
+     * @notice 撮合成交时结算资金 (买家用 USD 换 Long,卖家用 Long 换 USD)
      * @param buyOrderId 买单 ID
      * @param sellOrderId 卖单 ID
      * @param buyer 买家地址
      * @param seller 卖家地址
-     * @param token Token 地址
      * @param matchAmount 成交数量
      * @param matchPrice 成交价格 (basis points, 1-10000)
      * @param eventId 事件 ID
@@ -197,7 +211,6 @@ interface IFundingManager {
         uint256 sellOrderId,
         address buyer,
         address seller,
-        address token,
         uint256 matchAmount,
         uint256 matchPrice,
         uint256 eventId,
@@ -205,76 +218,93 @@ interface IFundingManager {
     ) external;
 
     /**
-     * @notice 事件结算时分配奖金
+     * @notice 标记事件已结算
      * @param eventId 事件 ID
      * @param winningOutcomeIndex 获胜结果索引
-     * @param token Token 地址
-     * @param winners 获胜者地址列表
-     * @param positions 获胜者持仓列表
      */
-    function settleEvent(
-        uint256 eventId,
-        uint8 winningOutcomeIndex,
-        address token,
-        address[] calldata winners,
-        uint256[] calldata positions
-    ) external;
+    function markEventSettled(uint256 eventId, uint8 winningOutcomeIndex) external;
+
+    /**
+     * @notice 用户领取获胜奖金
+     * @param eventId 事件 ID
+     */
+    function redeemWinnings(uint256 eventId) external;
+
+    /**
+     * @notice 检查用户是否可以领取奖金
+     * @param eventId 事件 ID
+     * @param user 用户地址
+     * @return canRedeem 是否可领取
+     * @return winningPosition 获胜持仓数量
+     */
+    function canRedeemWinnings(uint256 eventId, address user) external view returns (bool canRedeem, uint256 winningPosition);
+
+    /**
+     * @notice 检查用户是否已领取
+     * @param eventId 事件 ID
+     * @param user 用户地址
+     * @return 是否已领取
+     */
+    function userHasRedeemed(uint256 eventId, address user) external view returns (bool);
 
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 获取 Manager 总 Token 余额
-     * @param token Token 地址
-     * @return balance Token 总余额
-     */
-    function tokenBalances(address token) external view returns (uint256);
-
-    /**
-     * @notice 获取用户可用余额
+     * @notice 获取用户统一 USD 余额
      * @param user 用户地址
-     * @param token Token 地址
-     * @return balance 可用余额
+     * @return balance USD 余额 (1e18)
      */
-    function getUserBalance(address user, address token) external view returns (uint256);
+    function getUserUsdBalance(address user) external view returns (uint256);
 
     /**
      * @notice 获取用户 Long Token 持仓
      * @param user 用户地址
-     * @param token Token 地址
      * @param eventId 事件 ID
      * @param outcomeIndex 结果索引
      * @return position Long Token 数量
      */
-    function getLongPosition(
-        address user,
-        address token,
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external view returns (uint256);
+    function getLongPosition(address user, uint256 eventId, uint8 outcomeIndex) external view returns (uint256);
 
     /**
-     * @notice 获取订单锁定的 USDT
+     * @notice 获取订单锁定的 USD
      * @param orderId 订单 ID
-     * @return locked 锁定的 USDT 数量
+     * @return locked 锁定的 USD 数量
      */
-    function getOrderLockedUSDT(uint256 orderId) external view returns (uint256);
+    function getOrderLockedUSD(uint256 orderId) external view returns (uint256);
 
     /**
      * @notice 获取订单锁定的 Long Token
      * @param orderId 订单 ID
-     * @param eventId 事件 ID
-     * @param outcomeIndex 结果索引
      * @return locked 锁定的 Long Token 数量
      */
-    function getOrderLockedLong(uint256 orderId, uint256 eventId, uint8 outcomeIndex) external view returns (uint256);
+    function getOrderLockedLong(uint256 orderId) external view returns (uint256);
 
     /**
      * @notice 获取事件奖金池
      * @param eventId 事件 ID
-     * @param token Token 地址
      * @return pool 奖金池金额
      */
-    function getEventPrizePool(uint256 eventId, address token) external view returns (uint256);
+    function getEventPrizePool(uint256 eventId) external view returns (uint256);
+
+    /**
+     * @notice 获取 Token 流动性
+     * @param token Token 地址
+     * @return liquidity Token 流动性
+     */
+    function getTokenLiquidity(address token) external view returns (uint256);
+
+    /**
+     * @notice 获取支持的 Token 列表
+     */
+    function getSupportedTokens() external view returns (address[] memory);
+
+    /**
+     * @notice 检查是否可提现指定 USD 数量
+     * @param token Token 地址
+     * @param usdAmount USD 数量 (1e18)
+     * @return can 是否可提现
+     */
+    function canWithdraw(address token, uint256 usdAmount) external view returns (bool);
 
     /**
      * @notice 检查事件是否已结算
@@ -282,4 +312,12 @@ interface IFundingManager {
      * @return settled 是否已结算
      */
     function isEventSettled(uint256 eventId) external view returns (bool);
+
+    /**
+     * @notice 获取 Token 配置
+     * @param token Token 地址
+     * @return decimals Token decimals
+     * @return isEnabled 是否启用
+     */
+    function tokenConfigs(address token) external view returns (uint8 decimals, bool isEnabled);
 }

@@ -8,7 +8,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "../../interfaces/event/IOrderBookManager.sol";
-import "../../interfaces/event/IEventManager.sol";
 import "../../interfaces/event/IFundingManager.sol";
 import "../../interfaces/event/IFeeVaultManager.sol";
 
@@ -45,11 +44,8 @@ contract OrderBookManager is
 
     // ============ 事件与结果管理 Event & Outcome Management ============
 
-    /// @notice 支持的事件映射
-    mapping(uint256 => bool) public supportedEvents;
-
-    /// @notice 支持的结果映射: eventId => outcomeIndex => isSupported
-    mapping(uint256 => mapping(uint8 => bool)) public supportedOutcomes;
+    /// @notice 事件结果数量: eventId => outcomeCount (0 means not registered)
+    mapping(uint256 => uint8) public eventOutcomeCount;
 
     // ============ 订单管理 Order Management ============
 
@@ -75,7 +71,6 @@ contract OrderBookManager is
     /// @notice 事件订单簿(每个结果一个订单簿)
     struct EventOrderBook {
         mapping(uint8 => OutcomeOrderBook) outcomeOrderBooks;
-        uint8 outcomeCount;
     }
 
     /// @notice 事件订单簿映射: eventId => EventOrderBook
@@ -112,6 +107,16 @@ contract OrderBookManager is
     // ===== Upgradeable storage gap =====
     uint256[36] private __gap;
 
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     // ============ Constructor & Initializer ============
 
     constructor() {
@@ -131,12 +136,6 @@ contract OrderBookManager is
         feeVaultManager = _feeVaultManager;
         nextOrderId = 1; // Start from 1
     }
-
-    /**
-     * @notice Authorizes upgrade to new implementation
-     * @dev Only owner can upgrade (UUPS pattern)
-     */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ 外部函数 External Functions ============
 
@@ -160,32 +159,33 @@ contract OrderBookManager is
     ) external whenNotPaused nonReentrant returns (uint256 orderId) {
         address user = msg.sender; // Direct caller
 
-        if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
-        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        if (outcomeIndex >= eventOrderBook.outcomeCount) {
+        uint8 outcomeCount = eventOutcomeCount[eventId];
+        if (outcomeCount == 0) revert EventNotSupported(eventId);
+        if (outcomeIndex >= outcomeCount) {
             revert OutcomeNotSupported(eventId, outcomeIndex);
         }
-        if (!supportedOutcomes[eventId][outcomeIndex]) revert OutcomeNotSupported(eventId, outcomeIndex);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
         if (price == 0 || price > MAX_PRICE) revert InvalidPrice(price);
         if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
         if (amount == 0) revert InvalidAmount(amount);
 
-        // 计算手续费
-        uint256 fee = 0;
+        // 计算下单金额 (USD)
+        uint256 tradeUsd = (amount * price) / MAX_PRICE;
+
+        // 计算下单手续费 (USD)
+        uint256 placementFee = 0;
         if (feeVaultManager != address(0)) {
-            fee = IFeeVaultManager(feeVaultManager).calculateFee(amount, "trade");
+            placementFee = IFeeVaultManager(feeVaultManager).calculateFee(tradeUsd, "placement");
         }
 
         // 集成 FundingManager: 锁定下单所需资金或 Long Token
-        // 买单锁定 USDT (包含手续费): (amount + fee) * price / MAX_PRICE
-        // 卖单锁定 Long Token (包含手续费): amount + fee
-        uint256 requiredAmount = side == OrderSide.Buy ? ((amount + fee) * price) / MAX_PRICE : (amount + fee);
+        // 买单锁定 USD (不含手续费): amount * price / MAX_PRICE
+        // 卖单锁定 Long Token: amount
+        uint256 requiredAmount = side == OrderSide.Buy ? tradeUsd : amount;
 
         IFundingManager(fundingManager).lockForOrder(
             user, // 用户地址
             nextOrderId, // 订单 ID
-            tokenAddress, // Token 地址
             side == OrderSide.Buy, // 是否为买单
             requiredAmount, // 锁定数量
             eventId, // 事件 ID
@@ -193,13 +193,13 @@ contract OrderBookManager is
         );
 
         // 收取手续费
-        if (fee > 0 && feeVaultManager != address(0)) {
+        if (placementFee > 0 && feeVaultManager != address(0)) {
             IFeeVaultManager(feeVaultManager).collectFee(
                 tokenAddress,
                 user, // 使用传入的真实用户地址
-                fee,
+                placementFee,
                 eventId,
-                "trade"
+                "placement"
             );
         }
 
@@ -256,7 +256,6 @@ contract OrderBookManager is
             IFundingManager(fundingManager).unlockForOrder(
                 order.user,
                 orderId,
-                order.tokenAddress,
                 order.side == OrderSide.Buy, // 是否为买单
                 order.eventId,
                 order.outcomeIndex
@@ -267,11 +266,10 @@ contract OrderBookManager is
     }
 
     function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventManager nonReentrant {
-        if (!supportedEvents[eventId]) revert EventNotSupported(eventId);
+        uint8 outcomeCount = eventOutcomeCount[eventId];
+        if (outcomeCount == 0) revert EventNotSupported(eventId);
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
-        if (!supportedOutcomes[eventId][winningOutcomeIndex]) {
-            revert OutcomeNotSupported(eventId, winningOutcomeIndex);
-        }
+        if (winningOutcomeIndex >= outcomeCount) revert OutcomeNotSupported(eventId, winningOutcomeIndex);
 
         eventSettled[eventId] = true;
         eventResults[eventId] = winningOutcomeIndex;
@@ -282,25 +280,21 @@ contract OrderBookManager is
         emit EventSettled(eventId, winningOutcomeIndex);
     }
 
-    function addEvent(uint256 eventId, uint8 outcomeCount) external nonReentrant {
-        require(!supportedEvents[eventId], "OrderBookManager: event exists");
-
-        IEventManager.Event memory evt = IEventManager(eventManager).getEvent(eventId);
-        require(evt.status == IEventManager.EventStatus.Active, "OrderBookManager: event not active");
-        require(outcomeCount > 0 && outcomeCount <= 32, "OrderBookManager: invalid outcomeCount");
-        require(outcomeCount == evt.outcomes.length, "OrderBookManager: outcomeCount mismatch");
-        supportedEvents[eventId] = true;
-
-        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        eventOrderBook.outcomeCount = outcomeCount;
-        for (uint8 i = 0; i < outcomeCount; i++) {
-            supportedOutcomes[eventId][i] = true;
-        }
+    function registerEvent(uint256 eventId, uint8 outcomeCount) external onlyEventManager nonReentrant {
+        require(eventOutcomeCount[eventId] == 0, "OrderBookManager: event already registered");
+        require(outcomeCount >= 2 && outcomeCount <= 32, "OrderBookManager: invalid outcomeCount");
+        eventOutcomeCount[eventId] = outcomeCount;
 
         // 集成 FundingManager: 注册事件的结果选项 (用于完整集合铸造)
         IFundingManager(fundingManager).registerEvent(eventId, outcomeCount);
 
         emit EventAdded(eventId, outcomeCount);
+    }
+
+    function deactivateEvent(uint256 eventId) external onlyEventManager nonReentrant {
+        _cancelAllPendingOrders(eventId);
+        eventOutcomeCount[eventId] = 0;
+        emit EventDeactivated(eventId);
     }
 
     function getBestBid(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount) {
@@ -399,10 +393,11 @@ contract OrderBookManager is
         sellOrder.filledAmount += matchAmount;
         sellOrder.remainingAmount -= matchAmount;
 
-        // ✅ 计算撮合手续费
+        // ✅ 计算撮合手续费 (USD)
+        uint256 matchUsd = (matchAmount * matchPrice) / MAX_PRICE;
         uint256 matchFee = 0;
         if (feeVaultManager != address(0)) {
-            matchFee = IFeeVaultManager(feeVaultManager).calculateFee(matchAmount, "trade");
+            matchFee = IFeeVaultManager(feeVaultManager).calculateFee(matchUsd, "execution");
         }
 
         // ✅ 持仓管理: 记录买家持仓增加
@@ -422,7 +417,6 @@ contract OrderBookManager is
             sellOrderId, // 卖单 ID
             buyOrder.user, // 买家地址
             sellOrder.user, // 卖家地址
-            buyOrder.tokenAddress, // Token 地址
             matchAmount, // 成交数量
             matchPrice, // 成交价格
             buyOrder.eventId, // 事件 ID
@@ -441,7 +435,7 @@ contract OrderBookManager is
                     buyOrder.user,
                     buyerFee,
                     buyOrder.eventId,
-                    "trade"
+                    "execution"
                 );
             }
 
@@ -451,7 +445,7 @@ contract OrderBookManager is
                     sellOrder.user,
                     sellerFee,
                     sellOrder.eventId,
-                    "trade"
+                    "execution"
                 );
             }
         }
@@ -589,9 +583,9 @@ contract OrderBookManager is
     // Internal: cancel & settle 撤单与结算
     // ------------------------------------------------------------
     function _cancelAllPendingOrders(uint256 eventId) internal {
+        uint8 outcomeCount = eventOutcomeCount[eventId];
         EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-
-        for (uint8 i = 0; i < eventOrderBook.outcomeCount; i++) {
+        for (uint8 i = 0; i < outcomeCount; i++) {
             OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[i];
             _cancelMarketOrders(outcomeOrderBook);
         }
@@ -611,7 +605,6 @@ contract OrderBookManager is
                         IFundingManager(fundingManager).unlockForOrder(
                             order.user,
                             ids[j], // orderId
-                            order.tokenAddress,
                             order.side == OrderSide.Buy, // 是否为买单
                             order.eventId,
                             order.outcomeIndex
@@ -634,7 +627,6 @@ contract OrderBookManager is
                         IFundingManager(fundingManager).unlockForOrder(
                             order.user,
                             ids[j], // orderId
-                            order.tokenAddress,
                             order.side == OrderSide.Buy, // 是否为买单
                             order.eventId,
                             order.outcomeIndex
@@ -645,36 +637,9 @@ contract OrderBookManager is
         }
     }
 
-    // ✅ 结算持仓 - 集成 FundingManager 分配奖金
+    // ✅ 结算持仓 - 集成 FundingManager 标记事件已结算
     function _settlePositions(uint256 eventId, uint8 winningOutcomeIndex) internal {
-        // 获取获胜结果的所有持仓者
-        address[] storage winners = positionHolders[eventId][winningOutcomeIndex];
-        if (winners.length == 0) return; // 没有获胜者
-
-        // 构建获胜者和持仓数组
-        uint256[] memory winningPositions = new uint256[](winners.length);
-        address tokenAddress = address(0); // 需要从订单中获取 token 地址
-
-        // 收集获胜者持仓
-        for (uint256 i = 0; i < winners.length; i++) {
-            winningPositions[i] = positions[eventId][winningOutcomeIndex][winners[i]];
-
-            // 从该用户的订单中获取 token 地址
-            if (tokenAddress == address(0) && userOrders[winners[i]].length > 0) {
-                for (uint256 j = 0; j < userOrders[winners[i]].length; j++) {
-                    uint256 orderId = userOrders[winners[i]][j];
-                    if (orders[orderId].eventId == eventId) {
-                        tokenAddress = orders[orderId].tokenAddress;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 如果找到了 token 地址,调用 FundingManager 结算
-        if (tokenAddress != address(0)) {
-            IFundingManager(fundingManager).settleEvent(eventId, winningOutcomeIndex, tokenAddress, winners, winningPositions);
-        }
+        IFundingManager(fundingManager).markEventSettled(eventId, winningOutcomeIndex);
     }
 
     // ============ 持仓跟踪辅助函数 Position Tracking Helper ============
@@ -732,19 +697,5 @@ contract OrderBookManager is
     function setFeeVaultManager(address _feeVaultManager) external onlyOwner nonReentrant {
         require(_feeVaultManager != address(0), "OrderBookManager: invalid address");
         feeVaultManager = _feeVaultManager;
-    }
-
-    /**
-     * @notice 暂停合约
-     */
-    function pause() external onlyOwner nonReentrant {
-        _pause();
-    }
-
-    /**
-     * @notice 恢复合约
-     */
-    function unpause() external onlyOwner nonReentrant {
-        _unpause();
     }
 }

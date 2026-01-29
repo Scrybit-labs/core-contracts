@@ -30,7 +30,7 @@ interface IFeeVaultManager {
      * @notice 收取交易手续费
      * @param token Token 地址
      * @param payer 支付者地址
-     * @param amount 手续费金额
+     * @param amount 手续费金额 (USD, 1e18)
      * @param eventId 事件 ID
      * @param feeType 手续费类型("trade", "settlement", etc.)
      */
@@ -45,7 +45,7 @@ interface IFeeVaultManager {
     /**
      * @notice 提取手续费
      * @param token Token 地址
-     * @param amount 提取金额
+     * @param amount 提取金额 (USD, 1e18)
      */
     function withdrawFee(address token, uint256 amount) external;
 
@@ -59,11 +59,17 @@ interface IFeeVaultManager {
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 获取手续费余额
-     * @param token Token 地址
-     * @return balance 手续费余额
+     * @notice 获取协议 USD 手续费余额
+     * @param token Token 地址 (保留参数以兼容旧接口)
+     * @return balance 手续费余额 (USD, 1e18)
      */
     function getFeeBalance(address token) external view returns (uint256 balance);
+
+    /**
+     * @notice 获取协议 USD 手续费余额
+     * @return balance 手续费余额 (USD, 1e18)
+     */
+    function getProtocolUsdFeeBalance() external view returns (uint256 balance);
 
     /**
      * @notice 获取手续费率
@@ -74,7 +80,7 @@ interface IFeeVaultManager {
 
     /**
      * @notice 计算手续费
-     * @param amount 交易金额
+     * @param amount 交易金额 (USD, 1e18)
      * @param feeType 手续费类型
      * @return fee 手续费金额
      */

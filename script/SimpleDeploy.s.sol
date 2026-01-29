@@ -93,6 +93,27 @@ contract SimpleDeploy is Script, DeploymentConfig {
         eventManager.setOrderBookManager(address(orderBookManager));
         fundingManager.setOrderBookManager(address(orderBookManager));
         feeVaultManager.setOrderBookManager(address(orderBookManager));
+        feeVaultManager.setFundingManager(address(fundingManager));
+        fundingManager.setFeeVaultManager(address(feeVaultManager));
+
+        // Configure supported tokens (optional env vars)
+        address usdt = vm.envOr("USDT_ADDRESS", address(0));
+        if (usdt != address(0)) {
+            fundingManager.configureToken(usdt, 6, true);
+            console.log("Configured USDT:", usdt);
+        }
+
+        address usdc = vm.envOr("USDC_ADDRESS", address(0));
+        if (usdc != address(0)) {
+            fundingManager.configureToken(usdc, 6, true);
+            console.log("Configured USDC:", usdc);
+        }
+
+        address dai = vm.envOr("DAI_ADDRESS", address(0));
+        if (dai != address(0)) {
+            fundingManager.configureToken(dai, 18, true);
+            console.log("Configured DAI:", dai);
+        }
 
         // Configure oracle
         oracleAdapter.setOracleConsumer(address(eventManager));

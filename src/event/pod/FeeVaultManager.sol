@@ -7,10 +7,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import "../../interfaces/event/IFeeVaultManager.sol";
+import "../../interfaces/event/IFundingManager.sol";
 
 /**
  * @title FeeVaultManager
@@ -25,8 +23,6 @@ contract FeeVaultManager is
     ReentrancyGuard,
     IFeeVaultManager
 {
-    using SafeERC20 for IERC20;
-
     // ============ Modifiers ============
 
     /// @notice 仅 OrderBookManager 可调用
@@ -40,10 +36,13 @@ contract FeeVaultManager is
     /// @notice OrderBookManager 合约地址
     address public orderBookManager;
 
+    /// @notice FundingManager 合约地址
+    address public fundingManager;
+
     // ============ 手续费配置 Fee Configuration ============
 
     /// @notice 手续费率映射: feeType => rate (basis points)
-    /// @dev 例如: feeRates["trade"] = 30 表示 0.3% 交易手续费
+    /// @dev 例如: feeRates["placement"] = 10 表示 0.1% 下单手续费
     mapping(bytes32 => uint256) internal feeRates;
 
     /// @notice 手续费率键列表(用于遍历)
@@ -54,21 +53,21 @@ contract FeeVaultManager is
 
     // ============ 手续费余额管理 Fee Balance Management ============
 
-    /// @notice Token 手续费余额: token => balance
-    mapping(address => uint256) public feeBalances;
+    /// @notice 协议统一 USD 手续费余额 (1e18)
+    uint256 public protocolUsdFeeBalance;
 
-    /// @notice 总手续费收取: token => totalCollected
+    /// @notice 总手续费收取(USD): token => totalCollectedUsd
     mapping(address => uint256) public totalFeesCollected;
 
-    /// @notice 总手续费提取: token => totalWithdrawn
+    /// @notice 总手续费提取(USD): token => totalWithdrawnUsd
     mapping(address => uint256) public totalFeesWithdrawn;
 
     // ============ 手续费统计 Fee Statistics ============
 
-    /// @notice 事件手续费统计: eventId => token => amount
+    /// @notice 事件手续费统计(USD): eventId => token => amount
     mapping(uint256 => mapping(address => uint256)) public eventFees;
 
-    /// @notice 用户支付的手续费: user => token => amount
+    /// @notice 用户支付的手续费(USD): user => token => amount
     mapping(address => mapping(address => uint256)) public userPaidFees;
 
     // ============ 常量 Constants ============
@@ -81,6 +80,16 @@ contract FeeVaultManager is
 
     // ===== Upgradeable storage gap =====
     uint256[41] private __gap;
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     // ============ Constructor & Initializer ============
 
@@ -99,14 +108,9 @@ contract FeeVaultManager is
         orderBookManager = _orderBookManager;
 
         // 设置默认手续费率
-        _setFeeRate("trade", 30); // 0.3% 交易手续费
+        _setFeeRate("placement", 10); // 0.1% 下单手续费
+        _setFeeRate("execution", 20); // 0.2% 撮合手续费
     }
-
-    /**
-     * @notice Authorizes upgrade to new implementation
-     * @dev Only owner can upgrade (UUPS pattern)
-     */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ 核心功能 Core Functions ============
 
@@ -114,7 +118,7 @@ contract FeeVaultManager is
      * @notice 收取交易手续费
      * @param token Token 地址
      * @param payer 支付者地址
-     * @param amount 手续费金额
+     * @param amount 手续费金额 (USD, 1e18)
      * @param eventId 事件 ID
      * @param feeType 手续费类型
      */
@@ -126,9 +130,13 @@ contract FeeVaultManager is
         string calldata feeType
     ) external whenNotPaused onlyOrderBookManager nonReentrant {
         if (amount == 0) revert InvalidAmount(amount);
+        require(fundingManager != address(0), "FeeVaultManager: fundingManager not set");
 
-        // 更新余额
-        feeBalances[token] += amount;
+        // 扣减用户 USD 余额
+        IFundingManager(fundingManager).collectProtocolFee(payer, amount);
+
+        // 更新余额 (USD)
+        protocolUsdFeeBalance += amount;
         totalFeesCollected[token] += amount;
 
         // 统计
@@ -141,29 +149,24 @@ contract FeeVaultManager is
     /**
      * @notice 提取手续费
      * @param token Token 地址
-     * @param amount 提取金额
+     * @param amount 提取金额 (USD, 1e18)
      */
     function withdrawFee(address token, uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert InvalidAmount(amount);
+        require(fundingManager != address(0), "FeeVaultManager: fundingManager not set");
 
-        uint256 available = feeBalances[token];
+        uint256 available = protocolUsdFeeBalance;
         if (available < amount) {
             revert InsufficientFeeBalance(token, amount, available);
         }
 
-        // 更新余额
-        feeBalances[token] -= amount;
+        // 更新余额 (USD)
+        protocolUsdFeeBalance -= amount;
         totalFeesWithdrawn[token] += amount;
 
-        // 转账
-        if (token == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)) {
-            // ETH
-            (bool sent, ) = owner().call{value: amount}("");
-            require(sent, "FeeVaultManager: failed to send ETH");
-        } else {
-            // ERC20
-            IERC20(token).safeTransfer(owner(), amount);
-        }
+        // 转账 (由 FundingManager 提取流动性)
+        uint256 tokenAmount = IFundingManager(fundingManager).denormalizeFromUsd(token, amount);
+        IFundingManager(fundingManager).withdrawLiquidity(token, tokenAmount, owner());
 
         emit FeeWithdrawn(token, owner(), amount);
     }
@@ -202,12 +205,18 @@ contract FeeVaultManager is
     // ============ 查询功能 View Functions ============
 
     /**
-     * @notice 获取手续费余额
-     * @param token Token 地址
-     * @return balance 手续费余额
+     * @notice 获取协议 USD 手续费余额
+     * @return balance 手续费余额 (USD, 1e18)
      */
-    function getFeeBalance(address token) external view returns (uint256 balance) {
-        return feeBalances[token];
+    function getFeeBalance(address /*token*/) external view returns (uint256 balance) {
+        return protocolUsdFeeBalance;
+    }
+
+    /**
+     * @notice 获取协议 USD 手续费余额
+     */
+    function getProtocolUsdFeeBalance() external view returns (uint256) {
+        return protocolUsdFeeBalance;
     }
 
     /**
@@ -222,7 +231,7 @@ contract FeeVaultManager is
 
     /**
      * @notice 计算手续费
-     * @param amount 交易金额
+     * @param amount 交易金额 (USD, 1e18)
      * @param feeType 手续费类型
      * @return fee 手续费金额
      */
@@ -247,17 +256,12 @@ contract FeeVaultManager is
     }
 
     /**
-     * @notice 暂停合约
+     * @notice 设置 FundingManager 地址
+     * @param _fundingManager FundingManager 地址
      */
-    function pause() external onlyOwner nonReentrant {
-        _pause();
-    }
-
-    /**
-     * @notice 恢复合约
-     */
-    function unpause() external onlyOwner nonReentrant {
-        _unpause();
+    function setFundingManager(address _fundingManager) external onlyOwner nonReentrant {
+        require(_fundingManager != address(0), "FeeVaultManager: invalid address");
+        fundingManager = _fundingManager;
     }
 
     // ============ 接收 ETH ============
