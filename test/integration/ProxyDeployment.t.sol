@@ -4,8 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import "../../src/oracle/OracleManager.sol";
-import "../../src/oracle/OracleAdapter.sol";
+import "../../src/oracle/simple/SimpleOracleAdapter.sol";
 import "../../src/core/EventManager.sol";
 import "../../src/core/OrderBookManager.sol";
 import "../../src/core/FundingManager.sol";
@@ -15,13 +14,9 @@ contract ProxyDeploymentTest is Test {
     function testProxyDeploymentWiring() public {
         address owner = address(this);
 
-        OracleManager oracleManagerImpl = new OracleManager();
-        bytes memory initData = abi.encodeCall(OracleManager.initialize, (owner));
-        OracleManager oracleManager = OracleManager(address(new ERC1967Proxy(address(oracleManagerImpl), initData)));
-
-        OracleAdapter oracleAdapterImpl = new OracleAdapter();
-        initData = abi.encodeCall(OracleAdapter.initialize, (owner, address(0)));
-        OracleAdapter oracleAdapter = OracleAdapter(
+        SimpleOracleAdapter oracleAdapterImpl = new SimpleOracleAdapter();
+        bytes memory initData = abi.encodeCall(SimpleOracleAdapter.initialize, (owner, address(0)));
+        SimpleOracleAdapter oracleAdapter = SimpleOracleAdapter(
             payable(address(new ERC1967Proxy(address(oracleAdapterImpl), initData)))
         );
 
@@ -64,21 +59,12 @@ contract ProxyDeploymentTest is Test {
         feeVaultManager.setOrderBookManager(address(orderBookManager));
 
         oracleAdapter.setOracleConsumer(address(eventManager));
-        oracleAdapter.addAuthorizedEventManager(address(eventManager));
-        oracleAdapter.setRequestTimeout(2 days);
-        oracleAdapter.setMinConfirmations(2);
-
-        oracleManager.addOracleAdapter(address(oracleAdapter), "DefaultAdapter");
-        oracleManager.setDefaultAdapter(address(oracleAdapter));
 
         assertEq(eventManager.orderBookManager(), address(orderBookManager));
         assertEq(fundingManager.orderBookManager(), address(orderBookManager));
         assertEq(feeVaultManager.orderBookManager(), address(orderBookManager));
 
         assertEq(oracleAdapter.oracleConsumer(), address(eventManager));
-        assertTrue(oracleAdapter.authorizedEventManagers(address(eventManager)));
-        assertEq(oracleAdapter.requestTimeout(), 2 days);
-        assertEq(oracleAdapter.minConfirmations(), 2);
-        assertEq(oracleManager.defaultAdapter(), address(oracleAdapter));
+        assertTrue(eventManager.authorizedOracleAdapters(address(oracleAdapter)));
     }
 }

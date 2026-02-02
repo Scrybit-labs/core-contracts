@@ -7,13 +7,15 @@
 1. Actions with permits
     - Motivation: More flexible auth for all actions, no need for a separate txn to register as some role first, just submit valid sig, this is adopted by major protocols
     - Verdict
-        - [ ] Yes
-            - Priority(1-highest -> 5-lowest): 3
-        - [ ] No
-2. Withdraw strategy design
-    - Motivation:
         - [x] Yes
+            - Priority(1-highest -> 5-lowest): 4
+        - [ ] No
+2. ~~Withdraw strategy design~~
+    - Motivation:
+        - [ ] Yes
             - Priority(1-highest -> 5-lowest): 2
+        - [x] No
+            - Reason: Will use active liquidity monitoring instead of this approach
 
 ### `EventManager`
 
@@ -39,3 +41,19 @@
         - [ ] Yes
             - Priority(1-highest -> 5-lowest): 5
         - [x] No
+3. Expose function to check balance of supported token
+    - Motivation: Helps off-chain service, help limiting on-chain deposits
+        - Verdict
+            - [ ] Yes
+                - Priority(1-highest -> 5-lowest): 3
+            - [ ] No
+
+### Oracle
+
+- [ ] Which to use
+- [ ] Integration
+
+### Order book
+
+- [ ] Logic location, on-chain or off-chain
+- [ ] Corresponding changes

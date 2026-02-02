@@ -25,3 +25,6 @@ AGENTS.md
 node_modules/
 .yarn/
 .yarnrc.yml
+
+# Foundry lib
+lib
