@@ -26,12 +26,14 @@ interface IEventManager {
         uint256 eventId; // 事件 ID
         string title; // 事件标题
         string description; // 事件描述
+        bytes32 eventType; // 事件类型标识 (用于预言机路由)
         uint256 deadline; // 下注截止时间戳
         uint256 settlementTime; // 预计结算时间戳
         EventStatus status; // 事件状态
         address creator; // 创建者地址
         Outcome[] outcomes; // 所有结果选项列表 (0-indexed)
         uint8 winningOutcomeIndex; // 获胜结果索引 (结算后设置)
+        address usedOracleAdapter; // 实际使用的预言机适配器 (requestOracleResult 时记录)
     }
 
     // ============ 事件 Events ============
@@ -57,6 +59,15 @@ interface IEventManager {
     /// @notice 事件创建者移除事件
     event EventCreatorRemoved(address indexed creator);
 
+    /// @notice 事件类型对应预言机适配器设置
+    event EventTypeOracleSet(bytes32 indexed eventType, address indexed oracleAdapter);
+
+    /// @notice 事件类型对应预言机适配器移除
+    event EventTypeOracleRemoved(bytes32 indexed eventType);
+
+    /// @notice 事件使用的预言机适配器 (requestOracleResult 时触发)
+    event OracleAdapterUsed(uint256 indexed eventId, address indexed oracleAdapter, bytes32 indexed eventType);
+
     // ============ 核心功能 Functions ============
 
     /**
@@ -66,6 +77,7 @@ interface IEventManager {
      * @param deadline 下注截止时间
      * @param settlementTime 预计结算时间
      * @param outcomes 结果选项数组
+     * @param eventType 事件类型标识
      * @return eventId 生成的事件 ID
      */
     function createEvent(
@@ -73,7 +85,8 @@ interface IEventManager {
         string calldata description,
         uint256 deadline,
         uint256 settlementTime,
-        Outcome[] calldata outcomes
+        Outcome[] calldata outcomes,
+        bytes32 eventType
     ) external returns (uint256 eventId);
 
     /**
@@ -124,10 +137,44 @@ interface IEventManager {
     function setOrderBookManager(address _orderBookManager) external;
 
     /**
-     * @notice 设置 OracleAdapter 地址
-     * @param _oracleAdapter OracleAdapter 地址
+     * @notice 设置默认 OracleAdapter 地址
+     * @param _defaultOracleAdapter 默认 OracleAdapter 地址
      */
-    function setOracleAdapter(address _oracleAdapter) external;
+    function setDefaultOracleAdapter(address _defaultOracleAdapter) external;
+
+    /**
+     * @notice 设置事件类型对应的 OracleAdapter
+     * @param eventType 事件类型标识 (例如 keccak256("SPORTS"))
+     * @param oracleAdapter OracleAdapter 地址
+     */
+    function setEventTypeOracleAdapter(bytes32 eventType, address oracleAdapter) external;
+
+    /**
+     * @notice 移除事件类型对应的 OracleAdapter (回退到默认适配器)
+     * @param eventType 事件类型标识
+     */
+    function removeEventTypeOracleAdapter(bytes32 eventType) external;
+
+    /**
+     * @notice 获取事件类型对应的 OracleAdapter
+     * @param eventType 事件类型标识
+     * @return OracleAdapter 地址 (未设置则为 address(0))
+     */
+    function getEventTypeOracleAdapter(bytes32 eventType) external view returns (address);
+
+    /**
+     * @notice 获取事件将使用的 OracleAdapter (带路由逻辑)
+     * @param eventId 事件 ID
+     * @return OracleAdapter 地址 (按类型映射或默认适配器)
+     */
+    function getOracleAdapterForEvent(uint256 eventId) external view returns (address);
+
+    /**
+     * @notice 获取事件实际使用的 OracleAdapter
+     * @param eventId 事件 ID
+     * @return OracleAdapter 地址 (未请求结果则为 address(0))
+     */
+    function getEventOracleAdapter(uint256 eventId) external view returns (address);
 
     // ============ 查询功能 View Functions ============
 
@@ -163,9 +210,9 @@ interface IEventManager {
     function orderBookManager() external view returns (address);
 
     /**
-     * @notice 获取 OracleAdapter 地址
+     * @notice 获取默认 OracleAdapter 地址
      */
-    function oracleAdapter() external view returns (address);
+    function defaultOracleAdapter() external view returns (address);
 
     /**
      * @notice 查询是否为事件创建者

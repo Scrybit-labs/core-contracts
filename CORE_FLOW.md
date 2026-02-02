@@ -11,7 +11,7 @@
 ├── OrderBookManager（单一实例，管理所有订单）- UUPS 可升级
 ├── FundingManager（单一实例，管理所有资金）- UUPS 可升级
 ├── FeeVaultManager（单一实例，费用直接给 owner）- UUPS 可升级
-└── OracleAdapter（事件结算）
+└── OracleAdapter（事件结算，Simple/Mock/Third-party）
 ```
 
 **存储架构：** 所有 Manager 合约使用集成存储模式，带有 `__gap` 数组以支持 UUPS 升级。
@@ -215,7 +215,7 @@ Created → Active → Settled / Cancelled
 - **OrderBookManager**：订单撮合引擎
 - **FeeVaultManager**：费用收取（统一 USD 费用）
 - **EventManager**：事件状态管理
-- **OracleAdapter**：预言机结果提交
+- **OracleAdapter**：预言机结果提交（Simple/Mock/Third-party）
 - **平台管理员**：提取平台费用
 
 ### 详细步骤
@@ -464,11 +464,14 @@ orderBookManager.cancelOrder(orderId);
 事件创建者/管理员 → EventManager.requestOracleResult(eventId)
 ├─ 验证事件状态：require(status == Active)
 ├─ 验证已过截止时间：require(block.timestamp >= deadline)
-├─ 存储请求：eventOracleRequests[eventId] = OracleRequest {
-│     requestTime: block.timestamp,
-│     fulfilled: false
-│   }
-└─ 触发事件：OracleResultRequested(eventId, oracleAdapter)
+├─ 路由到适配器：targetOracleAdapter = _getOracleAdapterForEventType(evt.eventType)
+│  ├─ 优先使用：eventTypeToOracleAdapter[eventType]（类型特定预言机）
+│  └─ 回退到：defaultOracleAdapter（默认预言机）
+├─ 记录使用的适配器：evt.usedOracleAdapter = targetOracleAdapter（不可变）
+├─ 调用适配器：IOracle(targetOracleAdapter).requestEventResult(eventId, description)
+├─ 记录 requestId：eventOracleRequests[eventId] = requestId
+├─ 触发事件：OracleAdapterUsed(eventId, targetOracleAdapter, eventType)
+└─ 由 OracleAdapter 触发事件：ResultRequested(...)
 ```
 
 **代码示例：**
@@ -476,6 +479,9 @@ orderBookManager.cancelOrder(orderId);
 ```solidity
 // 事件创建者或管理员调用
 eventManager.requestOracleResult(eventId);
+
+// 系统会根据事件类型自动路由到对应的预言机适配器
+// 例如：体育事件 → Chainlink，加密货币事件 → UMA，其他 → 默认适配器
 ```
 
 ---
@@ -483,21 +489,21 @@ eventManager.requestOracleResult(eventId);
 #### 步骤 C2：预言机提交结果
 
 ```
-预言机 → OracleAdapter.fulfillResult(eventId, winningOutcomeIndex, merkleProof)
-├─ 验证预言机授权：require(isAuthorizedOracle[msg.sender])
-├─ 验证事件存在请求
-├─ 调用 EventManager.settleEvent(eventId, winningOutcomeIndex, merkleProof)
-└─ 标记已完成：eventOracleRequests[eventId].fulfilled = true
+预言机/Oracle 服务 → OracleAdapter.submitResult(...) 或 oracle-specific 回调
+├─ 验证预言机授权（适配器内）
+├─ 适配器将结果转换为统一回调
+└─ 调用 EventManager.fulfillResult(eventId, winningOutcomeIndex, proof)
 ```
 
 **代码示例：**
 
 ```solidity
-// 预言机调用
-oracleAdapter.fulfillResult(
+// 预言机调用（示例：SimpleOracleAdapter.submitResult）
+oracleAdapter.submitResult(
+    requestId,
     eventId,
-    1,              // 获胜选项索引（选项 B）
-    merkleProof     // Merkle 证明
+    1,          // 获胜选项索引（选项 B）
+    ""          // proof 可为空
 );
 ```
 
@@ -506,8 +512,8 @@ oracleAdapter.fulfillResult(
 #### 步骤 C3：标记事件已结算
 
 ```
-EventManager.settleEvent(eventId, winningOutcomeIndex, merkleProof)
-├─ 验证 Merkle 证明
+EventManager.fulfillResult(eventId, winningOutcomeIndex, proof)
+├─ proof 可为空（第三方预言机通常不提供 Merkle 证明）
 ├─ 更新事件状态：
 │   ├─ events[eventId].status = Settled
 │   └─ events[eventId].winningOutcomeIndex = winningOutcomeIndex
@@ -695,19 +701,19 @@ feeVaultManager.withdrawFee(usdt, 50 ether);
        ┌────▼─────┐
        │C1: 请求   │
        │预言机      │
-       │requestOracle│
+       │requestOracleResult│
        └────┬─────┘
             │
        ┌────▼─────┐
        │C2: 预言机 │
        │提交结果    │
-       │fulfillResult│
+       │submitResult│
        └────┬─────┘
             │
        ┌────▼─────┐
        │C3: 标记   │
        │结算完成    │
-       │markEventSettled│
+       │settleEvent│
        └────┬─────┘
             │
             ├─────── 取消待成交订单

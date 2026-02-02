@@ -88,13 +88,15 @@ contract UpgradeTest is Test {
         IEventManager.Outcome[] memory outcomes = new IEventManager.Outcome[](2);
         outcomes[0] = IEventManager.Outcome({name: "YES", description: "YES"});
         outcomes[1] = IEventManager.Outcome({name: "NO", description: "NO"});
+        bytes32 eventType = keccak256(bytes("TEST"));
 
         uint256 eventId = eventManager.createEvent(
             "Test Event",
             "Test Description",
             block.timestamp + 1 days,
             block.timestamp + 2 days,
-            outcomes
+            outcomes,
+            eventType
         );
         assertEq(eventId, 1);
         assertEq(eventManager.nextEventId(), 2);

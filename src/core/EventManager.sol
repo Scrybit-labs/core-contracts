@@ -33,11 +33,17 @@ contract EventManager is
         _;
     }
 
-    /// @notice 仅授权的预言机可调用
-    modifier onlyAuthorizedOracle() {
-        require(msg.sender == oracleAdapter, "EventManager: only authorized oracle adapter");
+    /// @notice 仅授权的预言机适配器可调用
+    modifier onlyAuthorizedOracleAdapter() {
+        require(authorizedOracleAdapters[msg.sender], "EventManager: not authorized oracle adapter");
         _;
     }
+
+    // ============ Events ============
+
+    event OracleAdapterAuthorized(address indexed oracleAdapter);
+    event OracleAdapterDeauthorized(address indexed oracleAdapter);
+    event OracleAdapterUpdated(address indexed newAdapter);
 
     /// @notice 事件必须存在
     modifier eventMustExist(uint256 eventId) {
@@ -59,8 +65,11 @@ contract EventManager is
     /// @notice OrderBookManager 合约地址(用于触发结算)
     address public orderBookManager;
 
-    /// @notice OracleAdapter 合约地址(用于验证预言机)
-    address public oracleAdapter;
+    /// @notice 默认 OracleAdapter 合约地址(用于发起新请求)
+    address public defaultOracleAdapter;
+
+    /// @notice Authorized oracle adapters for callbacks
+    mapping(address => bool) public authorizedOracleAdapters;
 
     /// @notice 事件创建者白名单
     mapping(address => bool) public isEventCreator;
@@ -68,8 +77,11 @@ contract EventManager is
     /// @notice Event oracle request tracking: eventId => requestId
     mapping(uint256 => bytes32) public eventOracleRequests;
 
+    /// @notice Event type to oracle adapter mapping
+    mapping(bytes32 => address) public eventTypeToOracleAdapter;
+
     // ===== Upgradeable storage gap =====
-    uint256[40] private __gap;
+    uint256[50] private __gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
@@ -91,13 +103,20 @@ contract EventManager is
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
      * @param _orderBookManager OrderBookManager 合约地址
-     * @param _oracleAdapter OracleAdapter 合约地址
+     * @param _defaultOracleAdapter 默认 OracleAdapter 合约地址
      */
-    function initialize(address initialOwner, address _orderBookManager, address _oracleAdapter) external initializer {
+    function initialize(
+        address initialOwner,
+        address _orderBookManager,
+        address _defaultOracleAdapter
+    ) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
         orderBookManager = _orderBookManager;
-        oracleAdapter = _oracleAdapter;
+        defaultOracleAdapter = _defaultOracleAdapter;
+        if (_defaultOracleAdapter != address(0)) {
+            authorizedOracleAdapters[_defaultOracleAdapter] = true;
+        }
 
         // Owner is an event creator by default
         isEventCreator[initialOwner] = true;
@@ -112,6 +131,7 @@ contract EventManager is
      * @param deadline 下注截止时间
      * @param settlementTime 预计结算时间
      * @param outcomes 结果选项数组
+     * @param eventType 事件类型标识
      * @return eventId 生成的事件 ID
      */
     function createEvent(
@@ -119,7 +139,8 @@ contract EventManager is
         string calldata description,
         uint256 deadline,
         uint256 settlementTime,
-        Outcome[] calldata outcomes
+        Outcome[] calldata outcomes,
+        bytes32 eventType
     ) external onlyEventCreator nonReentrant returns (uint256 eventId) {
         // Validate parameters
         require(bytes(title).length > 0, "EventManager: empty title");
@@ -127,6 +148,7 @@ contract EventManager is
         require(settlementTime > deadline, "EventManager: settlementTime must be after deadline");
         require(outcomes.length >= 2, "EventManager: at least 2 outcomes required");
         require(outcomes.length <= 32, "EventManager: max 32 outcomes");
+        require(eventType != bytes32(0), "EventManager: event type cannot be empty");
 
         // Generate event ID
         eventId = events.length;
@@ -141,6 +163,8 @@ contract EventManager is
         newEvent.status = EventStatus.Created;
         newEvent.creator = msg.sender;
         newEvent.winningOutcomeIndex = 0;
+        newEvent.eventType = eventType;
+        newEvent.usedOracleAdapter = address(0);
         newEvent.outcomes = outcomes;
         events.push(newEvent);
 
@@ -160,12 +184,52 @@ contract EventManager is
         require(evt.status == EventStatus.Active, "EventManager: event not active");
         require(block.timestamp >= evt.settlementTime, "EventManager: settlement time not reached");
 
-        require(oracleAdapter != address(0), "EventManager: oracleAdapter not set");
+        require(evt.usedOracleAdapter == address(0), "EventManager: oracle adapter already recorded");
 
-        requestId = IOracle(oracleAdapter).requestEventResult(eventId, evt.description);
+        address targetOracleAdapter = _getOracleAdapterForEventType(evt.eventType);
+        require(targetOracleAdapter != address(0), "EventManager: no oracle adapter configured");
+
+        evt.usedOracleAdapter = targetOracleAdapter;
+
+        requestId = IOracle(targetOracleAdapter).requestEventResult(eventId, evt.description);
 
         // Store request mapping
         eventOracleRequests[eventId] = requestId;
+
+        emit OracleAdapterUsed(eventId, targetOracleAdapter, evt.eventType);
+    }
+
+    /**
+     * @notice 获取事件类型对应的 OracleAdapter (带默认回退)
+     * @param eventType 事件类型标识
+     * @return OracleAdapter 地址
+     */
+    function _getOracleAdapterForEventType(bytes32 eventType) internal view returns (address) {
+        address typeSpecificOracle = eventTypeToOracleAdapter[eventType];
+        if (typeSpecificOracle != address(0)) {
+            return typeSpecificOracle;
+        }
+
+        return defaultOracleAdapter;
+    }
+
+    /**
+     * @notice 获取事件将使用的 OracleAdapter (带路由逻辑)
+     * @param eventId 事件 ID
+     * @return OracleAdapter 地址
+     */
+    function getOracleAdapterForEvent(uint256 eventId) external view eventMustExist(eventId) returns (address) {
+        Event storage evt = events[eventId];
+        return _getOracleAdapterForEventType(evt.eventType);
+    }
+
+    /**
+     * @notice 获取事件实际使用的 OracleAdapter
+     * @param eventId 事件 ID
+     * @return OracleAdapter 地址 (未请求结果则为 address(0))
+     */
+    function getEventOracleAdapter(uint256 eventId) external view eventMustExist(eventId) returns (address) {
+        return events[eventId].usedOracleAdapter;
     }
 
     /**
@@ -200,13 +264,13 @@ contract EventManager is
      * @notice 接收预言机结果并结算事件 (实现 IOracleConsumer 接口)
      * @param eventId 事件 ID
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
-     * @param proof 预言机证明数据
+     * @param proof 预言机证明数据 (可为空)
      */
     function fulfillResult(
         uint256 eventId,
         uint8 winningOutcomeIndex,
         bytes calldata proof
-    ) external override onlyAuthorizedOracle eventMustExist(eventId) nonReentrant {
+    ) external override onlyAuthorizedOracleAdapter eventMustExist(eventId) nonReentrant {
         _settleEvent(eventId, winningOutcomeIndex, proof);
     }
 
@@ -214,13 +278,13 @@ contract EventManager is
      * @notice 结算事件 (实现 IEventManager 接口,兼容层)
      * @param eventId 事件 ID
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
-     * @param proof 预言机证明数据
+     * @param proof 预言机证明数据 (可为空)
      */
     function settleEvent(
         uint256 eventId,
         uint8 winningOutcomeIndex,
         bytes calldata proof
-    ) external override onlyAuthorizedOracle eventMustExist(eventId) nonReentrant {
+    ) external override onlyAuthorizedOracleAdapter eventMustExist(eventId) nonReentrant {
         _settleEvent(eventId, winningOutcomeIndex, proof);
     }
 
@@ -228,7 +292,7 @@ contract EventManager is
      * @notice 内部函数: 结算事件逻辑
      * @param eventId 事件 ID
      * @param winningOutcomeIndex 获胜结果索引 (0-based)
-     * @param proof 预言机证明数据 (Merkle Proof)
+     * @param proof 预言机证明数据 (可为空,当前不做验证)
      */
     function _settleEvent(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) internal {
         Event storage evt = events[eventId];
@@ -238,9 +302,7 @@ contract EventManager is
 
         // 验证 winningOutcomeIndex 是否有效
         require(winningOutcomeIndex < uint8(evt.outcomes.length), "EventManager: invalid winning outcome index");
-
-        // 验证 Merkle Proof
-        _verifyMerkleProof(eventId, winningOutcomeIndex, proof);
+        proof;
 
         // 更新事件状态
         evt.status = EventStatus.Settled;
@@ -306,59 +368,6 @@ contract EventManager is
         }
 
         return false; // Settled 和 Cancelled 是终态
-    }
-
-    /**
-     * @notice 验证 Merkle Proof
-     * @param eventId 事件 ID
-     * @param winningOutcomeIndex 获胜结果索引 (0-based)
-     * @param proof Merkle Proof 证明数据
-     * @dev proof 格式: abi.encode(bytes32[] merkleProof, bytes32 root)
-     */
-    function _verifyMerkleProof(uint256 eventId, uint8 winningOutcomeIndex, bytes calldata proof) internal view {
-        // 如果 proof 为空,跳过验证 (向后兼容,但不推荐)
-        if (proof.length == 0) {
-            return;
-        }
-
-        // 解析 Merkle Proof
-        (bytes32[] memory merkleProof, bytes32 expectedRoot) = abi.decode(proof, (bytes32[], bytes32));
-
-        // 构造叶子节点: hash(eventId, winningOutcomeIndex, chainId)
-        bytes32 leaf = keccak256(abi.encodePacked(eventId, winningOutcomeIndex, block.chainid));
-
-        // 验证 Merkle Proof
-        bool isValid = _verifyProof(merkleProof, expectedRoot, leaf);
-        require(isValid, "EventManager: invalid merkle proof");
-
-        // 注意: 这里假设 OracleAdapter 已经验证了 root 的有效性
-        // 在生产环境中,可以添加对 OracleAdapter.verifyRoot(expectedRoot) 的调用
-    }
-
-    /**
-     * @notice 验证 Merkle Proof 是否有效
-     * @param proof Merkle 证明路径
-     * @param root Merkle 树根
-     * @param leaf 叶子节点
-     * @return valid 是否有效
-     */
-    function _verifyProof(bytes32[] memory proof, bytes32 root, bytes32 leaf) internal pure returns (bool) {
-        bytes32 computedHash = leaf;
-
-        for (uint256 i = 0; i < proof.length; i++) {
-            bytes32 proofElement = proof[i];
-
-            if (computedHash < proofElement) {
-                // Hash(current computed hash + current element of the proof)
-                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
-            } else {
-                // Hash(current element of the proof + current computed hash)
-                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
-            }
-        }
-
-        // 检查计算出的根是否匹配预期根
-        return computedHash == root;
     }
 
     // ============ 查询功能 View Functions ============
@@ -450,11 +459,68 @@ contract EventManager is
     }
 
     /**
-     * @notice 设置 OracleAdapter 地址
+     * @notice 设置默认 OracleAdapter 地址
+     * @param _defaultOracleAdapter 默认 OracleAdapter 地址
+     */
+    function setDefaultOracleAdapter(address _defaultOracleAdapter) external onlyOwner nonReentrant {
+        require(_defaultOracleAdapter != address(0), "EventManager: invalid address");
+        defaultOracleAdapter = _defaultOracleAdapter;
+        authorizedOracleAdapters[_defaultOracleAdapter] = true;
+        emit OracleAdapterUpdated(_defaultOracleAdapter);
+    }
+
+    /**
+     * @notice 设置事件类型对应的 OracleAdapter
+     * @param eventType 事件类型标识
      * @param _oracleAdapter OracleAdapter 地址
      */
-    function setOracleAdapter(address _oracleAdapter) external onlyOwner nonReentrant {
+    function setEventTypeOracleAdapter(bytes32 eventType, address _oracleAdapter) external onlyOwner nonReentrant {
+        require(eventType != bytes32(0), "EventManager: event type cannot be empty");
         require(_oracleAdapter != address(0), "EventManager: invalid address");
-        oracleAdapter = _oracleAdapter;
+
+        eventTypeToOracleAdapter[eventType] = _oracleAdapter;
+        authorizedOracleAdapters[_oracleAdapter] = true;
+
+        emit EventTypeOracleSet(eventType, _oracleAdapter);
+    }
+
+    /**
+     * @notice 移除事件类型对应的 OracleAdapter
+     * @param eventType 事件类型标识
+     */
+    function removeEventTypeOracleAdapter(bytes32 eventType) external onlyOwner nonReentrant {
+        require(eventType != bytes32(0), "EventManager: event type cannot be empty");
+
+        delete eventTypeToOracleAdapter[eventType];
+
+        emit EventTypeOracleRemoved(eventType);
+    }
+
+    /**
+     * @notice 获取事件类型对应的 OracleAdapter
+     * @param eventType 事件类型标识
+     * @return OracleAdapter 地址
+     */
+    function getEventTypeOracleAdapter(bytes32 eventType) external view returns (address) {
+        return eventTypeToOracleAdapter[eventType];
+    }
+
+    /**
+     * @notice 添加授权预言机适配器
+     * @param oracleAdapter 预言机适配器地址
+     */
+    function addAuthorizedOracleAdapter(address oracleAdapter) external onlyOwner nonReentrant {
+        require(oracleAdapter != address(0), "EventManager: invalid address");
+        authorizedOracleAdapters[oracleAdapter] = true;
+        emit OracleAdapterAuthorized(oracleAdapter);
+    }
+
+    /**
+     * @notice 移除授权预言机适配器
+     * @param oracleAdapter 预言机适配器地址
+     */
+    function removeAuthorizedOracleAdapter(address oracleAdapter) external onlyOwner nonReentrant {
+        authorizedOracleAdapters[oracleAdapter] = false;
+        emit OracleAdapterDeauthorized(oracleAdapter);
     }
 }
