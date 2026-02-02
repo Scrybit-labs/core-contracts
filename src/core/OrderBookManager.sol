@@ -123,10 +123,12 @@ contract OrderBookManager is
         _disableInitializers();
     }
 
-    function initialize(address initialOwner, address _eventManager, address _fundingManager, address _feeVaultManager)
-        public
-        initializer
-    {
+    function initialize(
+        address initialOwner,
+        address _eventManager,
+        address _fundingManager,
+        address _feeVaultManager
+    ) public initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
         eventManager = _eventManager;
@@ -181,26 +183,24 @@ contract OrderBookManager is
         // 卖单锁定 Long Token: amount
         uint256 requiredAmount = side == OrderSide.Buy ? tradeUsd : amount;
 
-        IFundingManager(fundingManager)
-            .lockForOrder(
-                user, // 用户地址
-                nextOrderId, // 订单 ID
-                side == OrderSide.Buy, // 是否为买单
-                requiredAmount, // 锁定数量
-                eventId, // 事件 ID
-                outcomeIndex // 结果索引
-            );
+        IFundingManager(fundingManager).lockForOrder(
+            user, // 用户地址
+            nextOrderId, // 订单 ID
+            side == OrderSide.Buy, // 是否为买单
+            requiredAmount, // 锁定数量
+            eventId, // 事件 ID
+            outcomeIndex // 结果索引
+        );
 
         // 收取手续费
         if (placementFee > 0 && feeVaultManager != address(0)) {
-            IFeeVaultManager(feeVaultManager)
-                .collectFee(
-                    tokenAddress,
-                    user, // 使用传入的真实用户地址
-                    placementFee,
-                    eventId,
-                    "placement"
-                );
+            IFeeVaultManager(feeVaultManager).collectFee(
+                tokenAddress,
+                user, // 使用传入的真实用户地址
+                placementFee,
+                eventId,
+                "placement"
+            );
         }
 
         orderId = nextOrderId++;
@@ -240,6 +240,10 @@ contract OrderBookManager is
     function cancelOrder(uint256 orderId) external nonReentrant {
         Order storage order = orders[orderId];
 
+        if (_msgSender() != order.user) {
+            revert("OrderBookManager: Invalid user");
+        }
+
         if (eventSettled[order.eventId]) {
             revert EventAlreadySettled(order.eventId);
         }
@@ -253,14 +257,13 @@ contract OrderBookManager is
 
         if (order.remainingAmount > 0) {
             // 集成 FundingManager: 解锁剩余未成交资金或 Long Token
-            IFundingManager(fundingManager)
-                .unlockForOrder(
-                    order.user,
-                    orderId,
-                    order.side == OrderSide.Buy, // 是否为买单
-                    order.eventId,
-                    order.outcomeIndex
-                );
+            IFundingManager(fundingManager).unlockForOrder(
+                order.user,
+                orderId,
+                order.side == OrderSide.Buy, // 是否为买单
+                order.eventId,
+                order.outcomeIndex
+            );
         }
 
         emit OrderCancelled(orderId, order.user, order.remainingAmount);
@@ -347,8 +350,9 @@ contract OrderBookManager is
 
                 // 跳过已完成/已取消的订单，保持数组顺序确保时间优先（FIFO）
                 if (
-                    sellOrder.status == OrderStatus.Cancelled || sellOrder.status == OrderStatus.Filled
-                        || sellOrder.remainingAmount == 0
+                    sellOrder.status == OrderStatus.Cancelled ||
+                    sellOrder.status == OrderStatus.Filled ||
+                    sellOrder.remainingAmount == 0
                 ) {
                     continue;
                 }
@@ -378,8 +382,9 @@ contract OrderBookManager is
 
                 // 跳过已完成/已取消的订单，保持数组顺序确保时间优先（FIFO）
                 if (
-                    buyOrder.status == OrderStatus.Cancelled || buyOrder.status == OrderStatus.Filled
-                        || buyOrder.remainingAmount == 0
+                    buyOrder.status == OrderStatus.Cancelled ||
+                    buyOrder.status == OrderStatus.Filled ||
+                    buyOrder.remainingAmount == 0
                 ) {
                     continue;
                 }
@@ -399,8 +404,9 @@ contract OrderBookManager is
         Order storage buyOrder = orders[buyOrderId];
         Order storage sellOrder = orders[sellOrderId];
 
-        uint256 matchAmount =
-            buyOrder.remainingAmount < sellOrder.remainingAmount ? buyOrder.remainingAmount : sellOrder.remainingAmount;
+        uint256 matchAmount = buyOrder.remainingAmount < sellOrder.remainingAmount
+            ? buyOrder.remainingAmount
+            : sellOrder.remainingAmount;
 
         uint256 matchPrice = sellOrder.price;
 
@@ -428,17 +434,16 @@ contract OrderBookManager is
         }
 
         // 集成 FundingManager: 资金结算 (虚拟 Long Token 模型)
-        IFundingManager(fundingManager)
-            .settleMatchedOrder(
-                buyOrderId, // 买单 ID
-                sellOrderId, // 卖单 ID
-                buyOrder.user, // 买家地址
-                sellOrder.user, // 卖家地址
-                matchAmount, // 成交数量
-                matchPrice, // 成交价格
-                buyOrder.eventId, // 事件 ID
-                buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
-            );
+        IFundingManager(fundingManager).settleMatchedOrder(
+            buyOrderId, // 买单 ID
+            sellOrderId, // 卖单 ID
+            buyOrder.user, // 买家地址
+            sellOrder.user, // 卖家地址
+            matchAmount, // 成交数量
+            matchPrice, // 成交价格
+            buyOrder.eventId, // 事件 ID
+            buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
+        );
 
         // ✅ 收取撮合手续费
         if (matchFee > 0 && feeVaultManager != address(0)) {
@@ -447,13 +452,23 @@ contract OrderBookManager is
             uint256 sellerFee = matchFee - buyerFee;
 
             if (buyerFee > 0) {
-                IFeeVaultManager(feeVaultManager)
-                    .collectFee(buyOrder.tokenAddress, buyOrder.user, buyerFee, buyOrder.eventId, "execution");
+                IFeeVaultManager(feeVaultManager).collectFee(
+                    buyOrder.tokenAddress,
+                    buyOrder.user,
+                    buyerFee,
+                    buyOrder.eventId,
+                    "execution"
+                );
             }
 
             if (sellerFee > 0) {
-                IFeeVaultManager(feeVaultManager)
-                    .collectFee(sellOrder.tokenAddress, sellOrder.user, sellerFee, sellOrder.eventId, "execution");
+                IFeeVaultManager(feeVaultManager).collectFee(
+                    sellOrder.tokenAddress,
+                    sellOrder.user,
+                    sellerFee,
+                    sellOrder.eventId,
+                    "execution"
+                );
             }
         }
 
@@ -604,8 +619,8 @@ contract OrderBookManager is
             Order storage order = orders[orderIds[i]];
             // 如果存在任何未完成的订单，返回 false
             if (
-                (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial)
-                    && order.remainingAmount > 0
+                (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) &&
+                order.remainingAmount > 0
             ) {
                 return false;
             }
@@ -636,14 +651,13 @@ contract OrderBookManager is
 
                     // 集成 FundingManager: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager)
-                            .unlockForOrder(
-                                order.user,
-                                ids[j], // orderId
-                                order.side == OrderSide.Buy, // 是否为买单
-                                order.eventId,
-                                order.outcomeIndex
-                            );
+                        IFundingManager(fundingManager).unlockForOrder(
+                            order.user,
+                            ids[j], // orderId
+                            order.side == OrderSide.Buy, // 是否为买单
+                            order.eventId,
+                            order.outcomeIndex
+                        );
                     }
                 }
             }
@@ -659,14 +673,13 @@ contract OrderBookManager is
 
                     // 集成 FundingManager: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager)
-                            .unlockForOrder(
-                                order.user,
-                                ids[j], // orderId
-                                order.side == OrderSide.Buy, // 是否为买单
-                                order.eventId,
-                                order.outcomeIndex
-                            );
+                        IFundingManager(fundingManager).unlockForOrder(
+                            order.user,
+                            ids[j], // orderId
+                            order.side == OrderSide.Buy, // 是否为买单
+                            order.eventId,
+                            order.outcomeIndex
+                        );
                     }
                 }
             }
