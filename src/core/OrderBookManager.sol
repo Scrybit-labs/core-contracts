@@ -123,17 +123,9 @@ contract OrderBookManager is
         _disableInitializers();
     }
 
-    function initialize(
-        address initialOwner,
-        address _eventManager,
-        address _fundingManager,
-        address _feeVaultManager
-    ) public initializer {
+    function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        eventManager = _eventManager;
-        fundingManager = _fundingManager;
-        feeVaultManager = _feeVaultManager;
         nextOrderId = 1; // Start from 1
     }
 
@@ -731,10 +723,21 @@ contract OrderBookManager is
     // ============ 管理功能 Admin Functions ============
 
     /**
+     * @notice 设置 EventManager 地址
+     * @param _eventManager EventManager 地址
+     */
+    function setEventManager(address _eventManager) external onlyOwner nonReentrant {
+        require(eventManager == address(0), "OrderBookManager: already set");
+        require(_eventManager != address(0), "OrderBookManager: invalid address");
+        eventManager = _eventManager;
+    }
+
+    /**
      * @notice 设置 FundingManager 地址
      * @param _fundingManager FundingManager 地址
      */
     function setFundingManager(address _fundingManager) external onlyOwner nonReentrant {
+        require(fundingManager == address(0), "OrderBookManager: already set");
         require(_fundingManager != address(0), "OrderBookManager: invalid address");
         fundingManager = _fundingManager;
     }
@@ -744,6 +747,7 @@ contract OrderBookManager is
      * @param _feeVaultManager FeeVaultManager 地址
      */
     function setFeeVaultManager(address _feeVaultManager) external onlyOwner nonReentrant {
+        require(feeVaultManager == address(0), "OrderBookManager: already set");
         require(_feeVaultManager != address(0), "OrderBookManager: invalid address");
         feeVaultManager = _feeVaultManager;
     }

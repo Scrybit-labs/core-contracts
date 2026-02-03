@@ -160,14 +160,10 @@ contract FundingManager is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _orderBookManager OrderBookManager 合约地址
-     * @param _eventManager EventManager 合约地址
      */
-    function initialize(address initialOwner, address _orderBookManager, address _eventManager) external initializer {
+    function initialize(address initialOwner) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        orderBookManager = _orderBookManager;
-        eventManager = _eventManager;
         minDepositPerTxnUsd = 1e18;
         minTokenBalanceUsd = 5e18;
     }
@@ -832,6 +828,7 @@ contract FundingManager is
      * @param _orderBookManager 新地址
      */
     function setOrderBookManager(address _orderBookManager) external onlyOwner nonReentrant {
+        require(orderBookManager == address(0), "FundingManager: already set");
         require(_orderBookManager != address(0), "FundingManager: invalid address");
         orderBookManager = _orderBookManager;
     }
@@ -841,6 +838,7 @@ contract FundingManager is
      * @param _eventManager 新地址
      */
     function setEventManager(address _eventManager) external onlyOwner nonReentrant {
+        require(eventManager == address(0), "FundingManager: already set");
         require(_eventManager != address(0), "FundingManager: invalid address");
         eventManager = _eventManager;
     }
@@ -850,6 +848,7 @@ contract FundingManager is
      * @param _feeVaultManager 新地址
      */
     function setFeeVaultManager(address _feeVaultManager) external onlyOwner nonReentrant {
+        require(feeVaultManager == address(0), "FundingManager: already set");
         require(_feeVaultManager != address(0), "FundingManager: invalid address");
         feeVaultManager = _feeVaultManager;
     }

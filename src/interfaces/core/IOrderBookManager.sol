@@ -62,10 +62,25 @@ interface IOrderBookManager {
     error InvalidPrice(uint256 price);
     error InvalidAmount(uint256 amount);
     error PriceNotAlignedWithTickSize(uint256 price);
-    error NotOrderOwner(uint256 orderId);
     error CannotCancelOrder(uint256 orderId);
     error EventMismatch(uint256 eventId1, uint256 eventId2);
     error OutcomeMismatch(uint8 outcomeIndex1, uint8 outcomeIndex2);
+
+    /**
+     * @notice 初始化合约
+     * @param initialOwner 初始所有者地址
+     */
+    function initialize(address initialOwner) external;
+
+    /**
+     * @notice 暂停合约
+     */
+    function pause() external;
+
+    /**
+     * @notice 恢复合约
+     */
+    function unpause() external;
 
     /**
      * @notice 下单 (Public - users can call directly)
@@ -115,8 +130,35 @@ interface IOrderBookManager {
     function getPosition(uint256 eventId, uint8 outcomeIndex, address user) external view returns (uint256 position);
 
     /**
+     * @notice 获取 EventManager 地址
+     */
+    function eventManager() external view returns (address);
+
+    /**
+     * @notice 获取 FundingManager 地址
+     */
+    function fundingManager() external view returns (address);
+
+    /**
+     * @notice 获取 FeeVaultManager 地址
+     */
+    function feeVaultManager() external view returns (address);
+
+    /**
+     * @notice 设置 EventManager 地址
+     * @param _eventManager EventManager 地址
+     */
+    function setEventManager(address _eventManager) external;
+
+    /**
      * @notice 设置 FundingManager 地址
      * @param _fundingManager FundingManager 地址
      */
     function setFundingManager(address _fundingManager) external;
+
+    /**
+     * @notice 设置 FeeVaultManager 地址
+     * @param _feeVaultManager FeeVaultManager 地址
+     */
+    function setFeeVaultManager(address _feeVaultManager) external;
 }

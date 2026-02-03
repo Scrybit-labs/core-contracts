@@ -39,12 +39,6 @@ contract EventManager is
         _;
     }
 
-    // ============ Events ============
-
-    event OracleAdapterAuthorized(address indexed oracleAdapter);
-    event OracleAdapterDeauthorized(address indexed oracleAdapter);
-    event OracleAdapterUpdated(address indexed newAdapter);
-
     /// @notice 事件必须存在
     modifier eventMustExist(uint256 eventId) {
         require(eventId < events.length, "EventManager: event does not exist");
@@ -102,17 +96,11 @@ contract EventManager is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _orderBookManager OrderBookManager 合约地址
      * @param _defaultOracleAdapter 默认 OracleAdapter 合约地址
      */
-    function initialize(
-        address initialOwner,
-        address _orderBookManager,
-        address _defaultOracleAdapter
-    ) external initializer {
+    function initialize(address initialOwner, address _defaultOracleAdapter) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        orderBookManager = _orderBookManager;
         defaultOracleAdapter = _defaultOracleAdapter;
         if (_defaultOracleAdapter != address(0)) {
             authorizedOracleAdapters[_defaultOracleAdapter] = true;
@@ -467,6 +455,7 @@ contract EventManager is
      * @param _orderBookManager 新地址
      */
     function setOrderBookManager(address _orderBookManager) external onlyOwner nonReentrant {
+        require(orderBookManager == address(0), "EventManager: already set");
         require(_orderBookManager != address(0), "EventManager: invalid address");
         orderBookManager = _orderBookManager;
     }

@@ -27,6 +27,22 @@ interface IFeeVaultManager {
     // ============ 核心功能 Core Functions ============
 
     /**
+     * @notice 初始化合约
+     * @param initialOwner 初始所有者地址
+     */
+    function initialize(address initialOwner) external;
+
+    /**
+     * @notice 暂停合约
+     */
+    function pause() external;
+
+    /**
+     * @notice 恢复合约
+     */
+    function unpause() external;
+
+    /**
      * @notice 收取交易手续费
      * @param token Token 地址
      * @param payer 支付者地址
@@ -85,4 +101,26 @@ interface IFeeVaultManager {
      * @return fee 手续费金额
      */
     function calculateFee(uint256 amount, string calldata feeType) external view returns (uint256 fee);
+
+    /**
+     * @notice 获取 OrderBookManager 地址
+     */
+    function orderBookManager() external view returns (address);
+
+    /**
+     * @notice 获取 FundingManager 地址
+     */
+    function fundingManager() external view returns (address);
+
+    /**
+     * @notice 设置 OrderBookManager 地址
+     * @param _orderBookManager OrderBookManager 地址
+     */
+    function setOrderBookManager(address _orderBookManager) external;
+
+    /**
+     * @notice 设置 FundingManager 地址
+     * @param _fundingManager FundingManager 地址
+     */
+    function setFundingManager(address _fundingManager) external;
 }

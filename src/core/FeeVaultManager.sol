@@ -100,12 +100,10 @@ contract FeeVaultManager is
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
-     * @param _orderBookManager OrderBookManager 合约地址
      */
-    function initialize(address initialOwner, address _orderBookManager) external initializer {
+    function initialize(address initialOwner) external initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
-        orderBookManager = _orderBookManager;
 
         // 设置默认手续费率
         _setFeeRate("placement", 10); // 0.1% 下单手续费
@@ -251,6 +249,7 @@ contract FeeVaultManager is
      * @param _orderBookManager OrderBookManager 地址
      */
     function setOrderBookManager(address _orderBookManager) external onlyOwner nonReentrant {
+        require(orderBookManager == address(0), "FeeVaultManager: already set");
         require(_orderBookManager != address(0), "FeeVaultManager: invalid address");
         orderBookManager = _orderBookManager;
     }
@@ -260,6 +259,7 @@ contract FeeVaultManager is
      * @param _fundingManager FundingManager 地址
      */
     function setFundingManager(address _fundingManager) external onlyOwner nonReentrant {
+        require(fundingManager == address(0), "FeeVaultManager: already set");
         require(_fundingManager != address(0), "FeeVaultManager: invalid address");
         fundingManager = _fundingManager;
     }

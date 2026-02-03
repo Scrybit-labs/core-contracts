@@ -68,7 +68,33 @@ interface IEventManager {
     /// @notice 事件使用的预言机适配器 (requestOracleResult 时触发)
     event OracleAdapterUsed(uint256 indexed eventId, address indexed oracleAdapter, bytes32 indexed eventType);
 
+    /// @notice 预言机适配器授权
+    event OracleAdapterAuthorized(address indexed oracleAdapter);
+
+    /// @notice 预言机适配器撤销授权
+    event OracleAdapterDeauthorized(address indexed oracleAdapter);
+
+    /// @notice 默认预言机适配器更新
+    event OracleAdapterUpdated(address indexed newAdapter);
+
     // ============ 核心功能 Functions ============
+
+    /**
+     * @notice 初始化合约
+     * @param initialOwner 初始所有者地址
+     * @param _defaultOracleAdapter 默认 OracleAdapter 合约地址
+     */
+    function initialize(address initialOwner, address _defaultOracleAdapter) external;
+
+    /**
+     * @notice 暂停合约
+     */
+    function pause() external;
+
+    /**
+     * @notice 恢复合约
+     */
+    function unpause() external;
 
     /**
      * @notice 创建事件 (Event creator direct call)
@@ -176,6 +202,18 @@ interface IEventManager {
      */
     function getEventOracleAdapter(uint256 eventId) external view returns (address);
 
+    /**
+     * @notice 添加授权预言机适配器
+     * @param oracleAdapter 预言机适配器地址
+     */
+    function addAuthorizedOracleAdapter(address oracleAdapter) external;
+
+    /**
+     * @notice 移除授权预言机适配器
+     * @param oracleAdapter 预言机适配器地址
+     */
+    function removeAuthorizedOracleAdapter(address oracleAdapter) external;
+
     // ============ 查询功能 View Functions ============
 
     function getEvents() external view returns (Event[] memory);
@@ -228,4 +266,9 @@ interface IEventManager {
      * @notice 获取事件对应的预言机请求 ID
      */
     function eventOracleRequests(uint256 eventId) external view returns (bytes32);
+
+    /**
+     * @notice 查询预言机适配器是否授权
+     */
+    function authorizedOracleAdapters(address oracleAdapter) external view returns (bool);
 }

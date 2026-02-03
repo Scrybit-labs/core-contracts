@@ -42,9 +42,8 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
         _disableInitializers();
     }
 
-    function initialize(address initialOwner, address _oracleConsumer, address _mockOracle) external initializer {
+    function initialize(address initialOwner, address _mockOracle) external initializer {
         __Ownable_init(initialOwner);
-        oracleConsumer = _oracleConsumer;
         mockOracle = _mockOracle;
     }
 

@@ -37,9 +37,6 @@ interface IFundingManager {
     /// @notice 订单结算事件
     event OrderSettled(uint256 indexed buyOrderId, uint256 indexed sellOrderId, uint256 amount);
 
-    /// @notice 事件结算事件
-    event EventSettled(uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 prizePool, uint256 winnersCount);
-
     /// @notice 事件标记已结算事件
     event EventMarkedSettled(uint256 indexed eventId, uint8 winningOutcomeIndex, uint256 prizePool);
 
@@ -51,9 +48,6 @@ interface IFundingManager {
 
     /// @notice 完整集合销毁事件
     event CompleteSetBurned(address indexed user, uint256 indexed eventId, uint256 amount);
-
-    /// @notice Long Token 转移事件
-    event LongTransferred(address indexed from, address indexed to, uint256 indexed eventId, uint8 outcomeIndex, uint256 amount);
 
     /// @notice 单笔入金最低金额更新事件
     event MinDepositPerTxnUsdUpdated(uint256 newMinDeposit);
@@ -69,10 +63,24 @@ interface IFundingManager {
     error InsufficientUsdBalance(address user, uint256 required, uint256 available);
     error InsufficientTokenLiquidity(address token, uint256 required, uint256 available);
     error InsufficientLongPosition(address user, uint256 eventId, uint8 outcomeIndex);
-    error EventAlreadySettled(uint256 eventId);
-    error EventNotRegistered(uint256 eventId);
 
     // ============ 基础功能 Basic Functions ============
+
+    /**
+     * @notice 初始化合约
+     * @param initialOwner 初始所有者地址
+     */
+    function initialize(address initialOwner) external;
+
+    /**
+     * @notice 暂停合约
+     */
+    function pause() external;
+
+    /**
+     * @notice 恢复合约
+     */
+    function unpause() external;
 
     /**
      * @notice 用户入金 (Public - users can call directly)
@@ -359,4 +367,37 @@ interface IFundingManager {
      * @return isEnabled 是否启用
      */
     function tokenConfigs(address token) external view returns (uint8 decimals, bool isEnabled);
+
+    /**
+     * @notice 获取 OrderBookManager 地址
+     */
+    function orderBookManager() external view returns (address);
+
+    /**
+     * @notice 获取 EventManager 地址
+     */
+    function eventManager() external view returns (address);
+
+    /**
+     * @notice 获取 FeeVaultManager 地址
+     */
+    function feeVaultManager() external view returns (address);
+
+    /**
+     * @notice 更新 OrderBookManager 地址
+     * @param _orderBookManager 新地址
+     */
+    function setOrderBookManager(address _orderBookManager) external;
+
+    /**
+     * @notice 更新 EventManager 地址
+     * @param _eventManager 新地址
+     */
+    function setEventManager(address _eventManager) external;
+
+    /**
+     * @notice 更新 FeeVaultManager 地址
+     * @param _feeVaultManager 新地址
+     */
+    function setFeeVaultManager(address _feeVaultManager) external;
 }
