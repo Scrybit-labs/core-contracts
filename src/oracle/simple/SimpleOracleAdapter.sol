@@ -123,7 +123,9 @@ contract SimpleOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeab
         return (request.eventId, request.requester, request.timestamp, request.fulfilled);
     }
 
-    function getEventResult(uint256 eventId) external view override returns (uint8 winningOutcomeIndex, bool confirmed) {
+    function getEventResult(
+        uint256 eventId
+    ) external view override returns (uint8 winningOutcomeIndex, bool confirmed) {
         return (eventResults[eventId], eventResultConfirmed[eventId]);
     }
 
@@ -143,5 +145,5 @@ contract SimpleOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeab
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    uint256[40] private __gap;
+    uint256[50] private __gap;
 }

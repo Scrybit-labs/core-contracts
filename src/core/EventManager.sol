@@ -59,26 +59,26 @@ contract EventManager is
 
     // ============ 状态变量 State Variables ============
 
-    /// @notice 事件存储数组
-    Event[] internal events;
-
     /// @notice OrderBookManager 合约地址(用于触发结算)
     address public orderBookManager;
 
     /// @notice 默认 OracleAdapter 合约地址(用于发起新请求)
     address public defaultOracleAdapter;
 
-    /// @notice Authorized oracle adapters for callbacks
-    mapping(address => bool) public authorizedOracleAdapters;
+    /// @notice 事件存储数组
+    Event[] internal events;
 
     /// @notice 事件创建者白名单
     mapping(address => bool) public isEventCreator;
 
-    /// @notice Event oracle request tracking: eventId => requestId
-    mapping(uint256 => bytes32) public eventOracleRequests;
-
     /// @notice Event type to oracle adapter mapping
     mapping(bytes32 => address) public eventTypeToOracleAdapter;
+
+    /// @notice Authorized oracle adapters for callbacks
+    mapping(address => bool) public authorizedOracleAdapters;
+
+    /// @notice Event oracle request tracking: eventId => requestId
+    mapping(uint256 => bytes32) public eventOracleRequests;
 
     // ===== Upgradeable storage gap =====
     uint256[50] private __gap;
@@ -116,6 +116,19 @@ contract EventManager is
         defaultOracleAdapter = _defaultOracleAdapter;
         if (_defaultOracleAdapter != address(0)) {
             authorizedOracleAdapters[_defaultOracleAdapter] = true;
+        }
+
+        // Reserve eventId 0 as a dummy placeholder so real events start from 1.
+        if (events.length == 0) {
+            Event storage dummyEvent = events.push();
+            dummyEvent.eventId = 0;
+            dummyEvent.title = "DUMMY_EVENT";
+            dummyEvent.description = "Placeholder event - do not use";
+            dummyEvent.status = EventStatus.Cancelled;
+            dummyEvent.creator = address(0);
+            dummyEvent.eventType = bytes32(0);
+            dummyEvent.winningOutcomeIndex = 0;
+            dummyEvent.usedOracleAdapter = address(0);
         }
 
         // Owner is an event creator by default
@@ -182,7 +195,7 @@ contract EventManager is
     ) external eventMustExist(eventId) onlyEventCreatorOrOwner(eventId) nonReentrant returns (bytes32 requestId) {
         Event storage evt = events[eventId];
         require(evt.status == EventStatus.Active, "EventManager: event not active");
-        require(block.timestamp >= evt.settlementTime, "EventManager: settlement time not reached");
+        require(block.timestamp >= evt.deadline, "EventManager: deadline not reached");
 
         require(evt.usedOracleAdapter == address(0), "EventManager: oracle adapter already recorded");
 
@@ -358,13 +371,13 @@ contract EventManager is
     function _isValidStatusTransition(EventStatus oldStatus, EventStatus newStatus) internal pure returns (bool) {
         // 状态机规则:
         // Created -> Active
-        // Active -> Settled/Cancelled
+        // Active -> Cancelled
         // Settled/Cancelled -> (终态,不可转换)
 
         if (oldStatus == EventStatus.Created) {
             return newStatus == EventStatus.Active;
         } else if (oldStatus == EventStatus.Active) {
-            return newStatus == EventStatus.Settled || newStatus == EventStatus.Cancelled;
+            return newStatus == EventStatus.Cancelled;
         }
 
         return false; // Settled 和 Cancelled 是终态

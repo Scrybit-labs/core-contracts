@@ -79,7 +79,7 @@ contract FeeVaultManager is
     uint256 public constant MAX_FEE_RATE = 1000;
 
     // ===== Upgradeable storage gap =====
-    uint256[41] private __gap;
+    uint256[50] private __gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 

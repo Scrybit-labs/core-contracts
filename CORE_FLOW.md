@@ -54,7 +54,7 @@ eventManager.addEventCreator(0x123...); // 授权创建者地址
 ```
 事件创建者 → EventManager.createEvent()
 ├─ 访问控制检查：require(isEventCreator[msg.sender] || msg.sender == owner())
-├─ 生成唯一事件ID：eventId = nextEventId++
+├─ 生成唯一事件ID：eventId = nextEventId++（从 1 开始，0 为保留的 dummy event）
 ├─ 验证参数：
 │   ├─ 结果选项数量：2-32 个
 │   ├─ 截止时间 > 当前时间
@@ -602,8 +602,8 @@ if (canRedeem) {
 #### 步骤 D1：用户提取 USD 余额
 
 ```
-用户 → FundingManager.withdrawDirect(tokenAddress, tokenAmount)
-├─ 转换为 USD：usdAmount = normalizeToUsd(token, tokenAmount)
+用户 → FundingManager.withdrawDirect(tokenAddress, usdAmount)
+├─ 转换为 Token：tokenAmount = denormalizeFromUsd(token, usdAmount)
 ├─ 验证余额：require(userUsdBalances[user] >= usdAmount)
 ├─ 扣除余额：userUsdBalances[user] -= usdAmount
 ├─ 减少流动性：tokenLiquidity[token] -= tokenAmount
@@ -614,11 +614,12 @@ if (canRedeem) {
 **代码示例：**
 
 ```solidity
-// 用户提取 200 USDT (假设 1 USDT = 1 USD)
+// 用户提取 200 USD (假设 1 USDT = 1 USD)
 fundingManager.withdrawDirect(usdt, 200 ether);
 ```
 
 **余额转换：** 通过 `denormalizeFromUsd(token, usdAmount)` 将 USD 余额转换回 ERC20 代币数量。
+**按 Token 数量提现：** 使用 `withdrawTokenAmount(tokenAddress, tokenAmount)`。
 
 ---
 

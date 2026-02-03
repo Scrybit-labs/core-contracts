@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import "../../src/oracle/simple/SimpleOracleAdapter.sol";
 import "../../src/interfaces/oracle/IOracle.sol";
@@ -23,8 +24,11 @@ contract SimpleOracleConsumer is IOracleConsumer {
 contract SimpleOracleAdapterTest is Test {
     function testSimpleOracleFlow() public {
         SimpleOracleConsumer consumer = new SimpleOracleConsumer();
-        SimpleOracleAdapter adapter = new SimpleOracleAdapter();
-        adapter.initialize(address(this), address(consumer));
+        SimpleOracleAdapter adapterImpl = new SimpleOracleAdapter();
+        bytes memory initData = abi.encodeCall(SimpleOracleAdapter.initialize, (address(this), address(consumer)));
+        SimpleOracleAdapter adapter = SimpleOracleAdapter(
+            payable(address(new ERC1967Proxy(address(adapterImpl), initData)))
+        );
         adapter.addAuthorizedOracle(address(this));
 
         vm.prank(address(consumer));

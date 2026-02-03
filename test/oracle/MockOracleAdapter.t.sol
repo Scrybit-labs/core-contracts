@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import "../../src/oracle/mock/MockOracle.sol";
 import "../../src/oracle/mock/MockOracleAdapter.sol";
@@ -25,8 +26,14 @@ contract MockOracleAdapterTest is Test {
     function testMockOracleFlow() public {
         MockOracleConsumer consumer = new MockOracleConsumer();
         MockOracle mockOracle = new MockOracle();
-        MockOracleAdapter adapter = new MockOracleAdapter();
-        adapter.initialize(address(this), address(consumer), address(mockOracle));
+        MockOracleAdapter adapterImpl = new MockOracleAdapter();
+        bytes memory initData = abi.encodeCall(
+            MockOracleAdapter.initialize,
+            (address(this), address(consumer), address(mockOracle))
+        );
+        MockOracleAdapter adapter = MockOracleAdapter(
+            payable(address(new ERC1967Proxy(address(adapterImpl), initData)))
+        );
         adapter.setEventNumOutcomes(1, 3);
         mockOracle.setMockResult(1, 2);
 

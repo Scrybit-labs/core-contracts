@@ -105,7 +105,7 @@ contract OrderBookManager is
     mapping(uint256 => uint8) public eventResults;
 
     // ===== Upgradeable storage gap =====
-    uint256[36] private __gap;
+    uint256[50] private __gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 

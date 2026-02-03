@@ -55,6 +55,12 @@ interface IFundingManager {
     /// @notice Long Token 转移事件
     event LongTransferred(address indexed from, address indexed to, uint256 indexed eventId, uint8 outcomeIndex, uint256 amount);
 
+    /// @notice 单笔入金最低金额更新事件
+    event MinDepositPerTxnUsdUpdated(uint256 newMinDeposit);
+
+    /// @notice Token 可用最低余额更新事件
+    event MinTokenBalanceUsdUpdated(uint256 newMinBalance);
+
     // ============ 错误 Errors ============
 
     error LessThanZero(uint256 amount);
@@ -122,6 +128,39 @@ interface IFundingManager {
      * @param usdAmount USD 数量 (1e18)
      */
     function denormalizeFromUsd(address token, uint256 usdAmount) external view returns (uint256);
+
+    /**
+     * @notice 获取 Token 价格 (USD, 1e18)
+     */
+    function getTokenPrice(address token) external view returns (uint256);
+
+    /**
+     * @notice 获取单笔入金最低金额 (USD, 1e18)
+     */
+    function getMinDepositPerTxnUsd() external view returns (uint256);
+
+    /**
+     * @notice 设置单笔入金最低金额 (USD, 1e18)
+     */
+    function setMinDepositPerTxnUsd(uint256 newMin) external;
+
+    /**
+     * @notice 获取用户钱包最低余额要求 (USD, 1e18)
+     */
+    function getMinTokenBalanceUsd() external view returns (uint256);
+
+    /**
+     * @notice 设置用户钱包最低余额要求 (USD, 1e18)
+     */
+    function setMinTokenBalanceUsd(uint256 newMin) external;
+
+    /**
+     * @notice 获取用户钱包在所有支持 Token 上的余额
+     * @param user 用户地址
+     * @return tokens Token 地址数组
+     * @return balances Token 数量数组 (按 Token 原始精度,等同于 token.balanceOf(user))
+     */
+    function getAllTokenBalances(address user) external view returns (address[] memory tokens, uint256[] memory balances);
 
     /**
      * @notice FeeVaultManager 收取协议费用(扣减用户 USD 余额)

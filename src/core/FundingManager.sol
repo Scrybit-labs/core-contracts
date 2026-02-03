@@ -88,11 +88,15 @@ contract FundingManager is
     /// @notice 用户统一 USD 余额: user => usdBalance (1e18)
     mapping(address => uint256) public userUsdBalances;
 
-    // ============ 虚拟 Long Token 持仓 Virtual Long Token Positions ============
+    // ============ 入金限制 Deposit Limits ============
 
-    /// @notice 用户虚拟 Long Token 持仓: user => eventId => outcomeIndex => longBalance
-    /// @dev 代表用户持有的某个结果的 Long token 数量
-    mapping(address => mapping(uint256 => mapping(uint8 => uint256))) public longPositions;
+    /// @notice 单笔入金最低金额 (USD, 1e18)
+    uint256 public minDepositPerTxnUsd;
+
+    /// @notice 用户钱包最低余额要求 (USD, 1e18)
+    uint256 public minTokenBalanceUsd;
+
+    // ============ 订单锁定 Order Locks ============
 
     /// @notice 订单锁定的 USD: orderId => lockedUSD
     /// @dev 买单锁定 USD,撮合时释放
@@ -102,7 +106,17 @@ contract FundingManager is
     /// @dev 卖单锁定 Long token,撮合时释放
     mapping(uint256 => uint256) public orderLockedLong;
 
-    // ============ 事件奖金池管理 Event Prize Pool ============
+    // ============ 虚拟 Long Token 持仓 Virtual Long Token Positions ============
+
+    /// @notice 用户虚拟 Long Token 持仓: user => eventId => outcomeIndex => longBalance
+    /// @dev 代表用户持有的某个结果的 Long token 数量
+    mapping(address => mapping(uint256 => mapping(uint8 => uint256))) public longPositions;
+
+    // ============ 事件结果信息 Event Outcome Info ============
+
+    /// @notice 事件的所有结果索引: eventId => outcomeIndices[]
+    /// @dev 用于铸造完整集合时遍历所有结果
+    mapping(uint256 => uint8[]) public eventOutcomes;
 
     /// @notice 事件奖金池: eventId => prizePool (统一 USD)
     mapping(uint256 => uint256) public eventPrizePool;
@@ -124,14 +138,8 @@ contract FundingManager is
     /// @notice 总提现量: token => totalWithdrawn
     mapping(address => uint256) public totalWithdrawn;
 
-    // ============ 事件结果信息 Event Outcome Info ============
-
-    /// @notice 事件的所有结果索引: eventId => outcomeIndices[]
-    /// @dev 用于铸造完整集合时遍历所有结果
-    mapping(uint256 => uint8[]) public eventOutcomes;
-
     // ===== Upgradeable storage gap =====
-    uint256[35] private __gap;
+    uint256[50] private __gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
@@ -160,6 +168,8 @@ contract FundingManager is
         __Pausable_init();
         orderBookManager = _orderBookManager;
         eventManager = _eventManager;
+        minDepositPerTxnUsd = 1e18;
+        minTokenBalanceUsd = 5e18;
     }
 
     // ============ 基础功能 Basic Functions ============
@@ -197,6 +207,17 @@ contract FundingManager is
         if (!config.isEnabled) revert TokenIsNotSupported(tokenAddress);
         if (amount == 0) revert LessThanZero(amount);
 
+        uint256 usdAmount = _normalizeToUsd(tokenAddress, amount);
+        require(usdAmount >= minDepositPerTxnUsd, "FundingManager: deposit below minimum");
+
+        uint256 preBalance = tokenAddress == ETHAddress
+            ? user.balance + ethValue
+            : IERC20(tokenAddress).balanceOf(user);
+        require(preBalance >= amount, "FundingManager: insufficient wallet balance");
+
+        uint256 remainingUsd = _normalizeToUsd(tokenAddress, preBalance - amount);
+        require(remainingUsd >= minTokenBalanceUsd, "FundingManager: token balance below minimum");
+
         // Handle token transfer
         if (tokenAddress == ETHAddress) {
             require(ethValue == amount, "FundingManager: ETH amount mismatch");
@@ -205,7 +226,6 @@ contract FundingManager is
         }
 
         // 更新余额 (统一 USD)
-        uint256 usdAmount = _normalizeToUsd(tokenAddress, amount);
         userUsdBalances[user] += usdAmount;
         tokenLiquidity[tokenAddress] += amount;
         totalDeposited[tokenAddress] += amount;
@@ -259,6 +279,7 @@ contract FundingManager is
 
         // 更新余额
         userUsdBalances[user] -= usdAmount;
+
         tokenLiquidity[tokenAddress] -= tokenAmount;
         totalWithdrawn[tokenAddress] += tokenAmount;
 
@@ -341,6 +362,79 @@ contract FundingManager is
     }
 
     /**
+     * @notice 获取 Token 价格 (USD, 1e18)
+     * @dev TODO: 接入 OracleAdapter 实时价格
+     */
+    function getTokenPrice(address token) external view returns (uint256) {
+        TokenConfig memory config = tokenConfigs[token];
+        if (!config.isEnabled) revert TokenIsNotSupported(token);
+        return 1e18;
+    }
+
+    /**
+     * @notice 获取单笔入金最低金额 (USD, 1e18)
+     */
+    function getMinDepositPerTxnUsd() external view returns (uint256) {
+        return minDepositPerTxnUsd;
+    }
+
+    /**
+     * @notice 设置单笔入金最低金额 (USD, 1e18)
+     */
+    function setMinDepositPerTxnUsd(uint256 newMin) external onlyOwner {
+        require(newMin > 0, "FundingManager: min deposit must be positive");
+        minDepositPerTxnUsd = newMin;
+        emit MinDepositPerTxnUsdUpdated(newMin);
+    }
+
+    /**
+     * @notice 获取用户钱包最低余额要求 (USD, 1e18)
+     */
+    function getMinTokenBalanceUsd() external view returns (uint256) {
+        return minTokenBalanceUsd;
+    }
+
+    /**
+     * @notice 设置用户钱包最低余额要求 (USD, 1e18)
+     */
+    function setMinTokenBalanceUsd(uint256 newMin) external onlyOwner {
+        require(newMin > 0, "FundingManager: min balance must be positive");
+        minTokenBalanceUsd = newMin;
+        emit MinTokenBalanceUsdUpdated(newMin);
+    }
+
+    /**
+     * @notice 获取用户钱包在所有支持 Token 上的余额
+     * @param user 用户地址
+     * @return tokens Token 地址数组
+     * @return balances Token 数量数组 (按 Token 原始精度)
+     */
+    function getAllTokenBalances(
+        address user
+    ) external view returns (address[] memory tokens, uint256[] memory balances) {
+        uint256 enabledCount = 0;
+        for (uint256 i = 0; i < supportedTokens.length; i++) {
+            if (tokenConfigs[supportedTokens[i]].isEnabled) {
+                enabledCount += 1;
+            }
+        }
+
+        tokens = new address[](enabledCount);
+        balances = new uint256[](enabledCount);
+
+        uint256 index = 0;
+        for (uint256 i = 0; i < supportedTokens.length; i++) {
+            address token = supportedTokens[i];
+            if (!tokenConfigs[token].isEnabled) {
+                continue;
+            }
+            tokens[index] = token;
+            balances[index] = token == ETHAddress ? user.balance : IERC20(token).balanceOf(user);
+            index += 1;
+        }
+    }
+
+    /**
      * @notice FeeVaultManager 收取协议费用(扣减用户 USD 余额)
      * @param payer 支付者地址
      * @param usdAmount USD 数量 (1e18)
@@ -414,6 +508,7 @@ contract FundingManager is
     function _mintCompleteSet(address user, uint256 eventId, uint256 usdAmount) internal {
         require(usdAmount > 0, "FundingManager: amount must be greater than zero");
         require(eventOutcomes[eventId].length > 0, "FundingManager: event not registered");
+        require(!eventSettled[eventId], "FundingManager: event already settled");
 
         uint256 availableBalance = userUsdBalances[user];
         if (availableBalance < usdAmount) {

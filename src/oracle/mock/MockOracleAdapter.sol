@@ -75,7 +75,7 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
             fulfilled: false
         });
 
-        oracleRequestToEventId[expectedRequestId] = eventId + 1;
+        oracleRequestToEventId[expectedRequestId] = eventId;
         eventRequests[eventId] = requestId;
 
         emit ResultRequested(requestId, eventId, msg.sender, eventDescription, block.timestamp);
@@ -100,7 +100,7 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
         uint256 storedEventId = oracleRequestToEventId[requestId];
         require(storedEventId != 0, "MockOracleAdapter: unknown request");
 
-        _recordResult(bytes32(requestId), storedEventId - 1, winningOutcomeIndex, bytes(""));
+        _recordResult(bytes32(requestId), storedEventId, winningOutcomeIndex, bytes(""));
     }
 
     function cancelRequest(bytes32 requestId) external override {
@@ -122,7 +122,9 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
         return (request.eventId, request.requester, request.timestamp, request.fulfilled);
     }
 
-    function getEventResult(uint256 eventId) external view override returns (uint8 winningOutcomeIndex, bool confirmed) {
+    function getEventResult(
+        uint256 eventId
+    ) external view override returns (uint8 winningOutcomeIndex, bool confirmed) {
         return (eventResults[eventId], eventResultConfirmed[eventId]);
     }
 
@@ -141,12 +143,7 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
         eventNumOutcomes[eventId] = numOutcomes;
     }
 
-    function _recordResult(
-        bytes32 requestId,
-        uint256 eventId,
-        uint8 winningOutcomeIndex,
-        bytes memory proof
-    ) internal {
+    function _recordResult(bytes32 requestId, uint256 eventId, uint8 winningOutcomeIndex, bytes memory proof) internal {
         OracleRequest storage request = requests[requestId];
         if (request.requestId == bytes32(0)) {
             revert RequestNotFound(requestId);
@@ -171,5 +168,5 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    uint256[40] private __gap;
+    uint256[50] private __gap;
 }
