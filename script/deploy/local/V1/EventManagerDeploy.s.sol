@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.10;
 
-import {Script, console} from "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 
 import {EventManager} from "../../../../src/core/EventManager.sol";
 import {EventManagerProxy} from "../../../../src/core/proxies/EventManagerProxy.sol";
@@ -17,6 +17,8 @@ contract EventManagerDeploy is Script {
     address public owner;
 
     function setUp(address deployer) public {
+        mockOracleAdapterDeploy = new MockOracleAdapterDeploy();
+
         mockOracleAdapterDeploy.setUp(deployer);
         mockOracleAdapterDeploy.run();
         (, address proxy) = mockOracleAdapterDeploy.getImplementationAndProxy();

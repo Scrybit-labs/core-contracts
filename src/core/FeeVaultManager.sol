@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+import "../interfaces/core/IFeeVaultManager.sol";
+import "../interfaces/core/IFundingManager.sol";
+
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "../interfaces/core/IFeeVaultManager.sol";
-import "../interfaces/core/IFundingManager.sol";
+import {EfficientHashLib} from "@solady/utils/EfficientHashLib.sol";
 
 /**
  * @title FeeVaultManager
@@ -25,6 +29,7 @@ contract FeeVaultManager is
 {
     // ============ Modifiers ============
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅 OrderBookManager 可调用
     modifier onlyOrderBookManager() {
         require(msg.sender == orderBookManager, "FeeVaultManager: only orderBookManager");
@@ -79,7 +84,7 @@ contract FeeVaultManager is
     uint256 public constant MAX_FEE_RATE = 1000;
 
     // ===== Upgradeable storage gap =====
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
@@ -186,7 +191,7 @@ contract FeeVaultManager is
     function _setFeeRate(string memory feeType, uint256 rate) internal {
         if (rate > MAX_FEE_RATE) revert InvalidFeeRate(rate);
 
-        bytes32 key = keccak256(bytes(feeType));
+        bytes32 key = EfficientHashLib.hash(bytes(feeType));
         uint256 oldRate = feeRates[key];
 
         feeRates[key] = rate;
@@ -223,7 +228,7 @@ contract FeeVaultManager is
      * @return rate 费率(基点)
      */
     function getFeeRate(string calldata feeType) external view returns (uint256 rate) {
-        bytes32 key = keccak256(bytes(feeType));
+        bytes32 key = EfficientHashLib.hash(bytes(feeType));
         return feeRates[key];
     }
 
@@ -234,7 +239,7 @@ contract FeeVaultManager is
      * @return fee 手续费金额
      */
     function calculateFee(uint256 amount, string calldata feeType) external view returns (uint256 fee) {
-        bytes32 key = keccak256(bytes(feeType));
+        bytes32 key = EfficientHashLib.hash(bytes(feeType));
         uint256 rate = feeRates[key];
 
         if (rate == 0) return 0;

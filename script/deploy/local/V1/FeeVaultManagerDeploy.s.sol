@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.10;
 
-import {Script, console} from "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 
 import {FeeVaultManager} from "../../../../src/core/FeeVaultManager.sol";
 import {FeeVaultManagerProxy} from "../../../../src/core/proxies/FeeVaultManagerProxy.sol";

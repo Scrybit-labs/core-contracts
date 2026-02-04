@@ -29,7 +29,7 @@ contract FundingManager is
     // ============ 常量 Constants ============
 
     /// @notice ETH 地址表示
-    address public constant ETHAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+    address public constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /// @notice 价格精度(基点)
     uint256 public constant PRICE_PRECISION = 10000;
@@ -39,18 +39,21 @@ contract FundingManager is
 
     // ============ Modifiers ============
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅 OrderBookManager 可调用
     modifier onlyOrderBookManager() {
         require(msg.sender == orderBookManager, "FundingManager: only orderBookManager");
         _;
     }
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅 EventManager 可调用
     modifier onlyEventManager() {
         require(msg.sender == eventManager, "FundingManager: only eventManager");
         _;
     }
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅 FeeVaultManager 可调用
     modifier onlyFeeVaultManager() {
         require(msg.sender == feeVaultManager, "FundingManager: only feeVaultManager");
@@ -100,7 +103,7 @@ contract FundingManager is
 
     /// @notice 订单锁定的 USD: orderId => lockedUSD
     /// @dev 买单锁定 USD,撮合时释放
-    mapping(uint256 => uint256) public orderLockedUSD;
+    mapping(uint256 => uint256) public orderLockedUsd;
 
     /// @notice 订单锁定的 Long Token: orderId => lockedLong
     /// @dev 卖单锁定 Long token,撮合时释放
@@ -139,7 +142,7 @@ contract FundingManager is
     mapping(address => uint256) public totalWithdrawn;
 
     // ===== Upgradeable storage gap =====
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
@@ -177,7 +180,7 @@ contract FundingManager is
      */
     function deposit(address tokenAddress, uint256 amount) external payable whenNotPaused nonReentrant {
         // TEMP: disable ETH deposit entry; remove to re-enable
-        require(tokenAddress != ETHAddress, "FundingManager: ETH deposits disabled");
+        require(tokenAddress != NATIVE_TOKEN, "FundingManager: ETH deposits disabled");
         _deposit(msg.sender, tokenAddress, amount, msg.value);
     }
 
@@ -206,7 +209,7 @@ contract FundingManager is
         uint256 usdAmount = _normalizeToUsd(tokenAddress, amount);
         require(usdAmount >= minDepositPerTxnUsd, "FundingManager: deposit below minimum");
 
-        uint256 preBalance = tokenAddress == ETHAddress
+        uint256 preBalance = tokenAddress == NATIVE_TOKEN
             ? user.balance + ethValue
             : IERC20(tokenAddress).balanceOf(user);
         require(preBalance >= amount, "FundingManager: insufficient wallet balance");
@@ -215,7 +218,7 @@ contract FundingManager is
         require(remainingUsd >= minTokenBalanceUsd, "FundingManager: token balance below minimum");
 
         // Handle token transfer
-        if (tokenAddress == ETHAddress) {
+        if (tokenAddress == NATIVE_TOKEN) {
             require(ethValue == amount, "FundingManager: ETH amount mismatch");
         } else {
             IERC20(tokenAddress).safeTransferFrom(user, address(this), amount);
@@ -236,7 +239,7 @@ contract FundingManager is
      */
     function withdrawDirect(address tokenAddress, uint256 usdAmount) external whenNotPaused nonReentrant {
         // TEMP: disable ETH withdraw entry; remove to re-enable
-        require(tokenAddress != ETHAddress, "FundingManager: ETH withdrawals disabled");
+        require(tokenAddress != NATIVE_TOKEN, "FundingManager: ETH withdrawals disabled");
         _withdraw(msg.sender, tokenAddress, payable(msg.sender), usdAmount);
     }
 
@@ -247,7 +250,7 @@ contract FundingManager is
      */
     function withdrawTokenAmount(address tokenAddress, uint256 tokenAmount) external whenNotPaused nonReentrant {
         // TEMP: disable ETH withdraw entry; remove to re-enable
-        require(tokenAddress != ETHAddress, "FundingManager: ETH withdrawals disabled");
+        require(tokenAddress != NATIVE_TOKEN, "FundingManager: ETH withdrawals disabled");
         uint256 usdAmount = _normalizeToUsd(tokenAddress, tokenAmount);
         _withdraw(msg.sender, tokenAddress, payable(msg.sender), usdAmount);
     }
@@ -280,7 +283,7 @@ contract FundingManager is
         totalWithdrawn[tokenAddress] += tokenAmount;
 
         // 转账
-        if (tokenAddress == ETHAddress) {
+        if (tokenAddress == NATIVE_TOKEN) {
             (bool sent, ) = withdrawAddress.call{value: tokenAmount}("");
             require(sent, "FundingManager: failed to send ETH");
         } else {
@@ -425,7 +428,7 @@ contract FundingManager is
                 continue;
             }
             tokens[index] = token;
-            balances[index] = token == ETHAddress ? user.balance : IERC20(token).balanceOf(user);
+            balances[index] = token == NATIVE_TOKEN ? user.balance : IERC20(token).balanceOf(user);
             index += 1;
         }
     }
@@ -466,7 +469,7 @@ contract FundingManager is
 
         tokenLiquidity[token] -= amount;
 
-        if (token == ETHAddress) {
+        if (token == NATIVE_TOKEN) {
             (bool sent, ) = payable(recipient).call{value: amount}("");
             require(sent, "FundingManager: failed to send ETH");
         } else {
@@ -587,7 +590,7 @@ contract FundingManager is
             }
 
             userUsdBalances[user] -= amount;
-            orderLockedUSD[orderId] = amount;
+            orderLockedUsd[orderId] = amount;
 
             emit FundsLocked(user, amount, eventId, outcomeIndex);
         } else {
@@ -621,11 +624,11 @@ contract FundingManager is
     ) external onlyOrderBookManager nonReentrant {
         if (isBuyOrder) {
             // 买单: 解锁 USD
-            uint256 lockedAmount = orderLockedUSD[orderId];
+            uint256 lockedAmount = orderLockedUsd[orderId];
             require(lockedAmount > 0, "FundingManager: no locked USD");
 
             userUsdBalances[user] += lockedAmount;
-            orderLockedUSD[orderId] = 0;
+            orderLockedUsd[orderId] = 0;
 
             emit FundsUnlocked(user, lockedAmount, eventId, outcomeIndex);
         } else {
@@ -665,8 +668,8 @@ contract FundingManager is
         uint256 payment = (matchAmount * matchPrice) / PRICE_PRECISION;
 
         // 买家: 消耗锁定的 USD,获得 Long Token
-        require(orderLockedUSD[buyOrderId] >= payment, "FundingManager: insufficient locked USD");
-        orderLockedUSD[buyOrderId] -= payment;
+        require(orderLockedUsd[buyOrderId] >= payment, "FundingManager: insufficient locked USD");
+        orderLockedUsd[buyOrderId] -= payment;
         longPositions[buyer][eventId][outcomeIndex] += matchAmount;
 
         // 卖家: 消耗锁定的 Long Token,获得 USD
@@ -744,8 +747,8 @@ contract FundingManager is
      * @param orderId 订单 ID
      * @return locked 锁定的 USD 数量
      */
-    function getOrderLockedUSD(uint256 orderId) external view returns (uint256) {
-        return orderLockedUSD[orderId];
+    function getOrderLockedUsd(uint256 orderId) external view returns (uint256) {
+        return orderLockedUsd[orderId];
     }
 
     /**

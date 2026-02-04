@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import {Script, console} from "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 
 import {IMockOracleAdapter} from "../../../../src/interfaces/oracle/IMockOracleAdapter.sol";
 import {IEventManager} from "../../../../src/interfaces/core/IEventManager.sol";
@@ -9,6 +9,8 @@ import {IFundingManager} from "../../../../src/interfaces/core/IFundingManager.s
 import {IOrderBookManager} from "../../../../src/interfaces/core/IOrderBookManager.sol";
 
 contract ContractsLinker is Script {
+    address public owner;
+
     IMockOracleAdapter public mockOracleAdapter;
     IEventManager public eventManager;
     IFeeVaultManager public feeVaultManager;
@@ -16,12 +18,15 @@ contract ContractsLinker is Script {
     IOrderBookManager public orderBookManager;
 
     function setUp(
+        address _owner,
         address _mockOracleAdapter,
         address _eventManager,
         address _feeVaultManager,
         address _fundingManager,
         address _orderBookManager
     ) public {
+        owner = _owner;
+
         mockOracleAdapter = IMockOracleAdapter(_mockOracleAdapter);
         eventManager = IEventManager(_eventManager);
         feeVaultManager = IFeeVaultManager(_feeVaultManager);
@@ -30,6 +35,8 @@ contract ContractsLinker is Script {
     }
 
     function run() public {
+        vm.startPrank(owner);
+
         // EventManager and OracleAdapter
         if (eventManager.defaultOracleAdapter() == address(0)) {
             eventManager.setDefaultOracleAdapter(address(mockOracleAdapter));
@@ -52,5 +59,7 @@ contract ContractsLinker is Script {
         orderBookManager.setEventManager(address(eventManager));
         orderBookManager.setFundingManager(address(fundingManager));
         orderBookManager.setFeeVaultManager(address(feeVaultManager));
+
+        vm.stopPrank();
     }
 }

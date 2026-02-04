@@ -26,6 +26,7 @@ contract OrderBookManager is
 {
     // ============ Modifiers ============
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     modifier onlyEventManager() {
         require(msg.sender == eventManager, "OrderBookManager: only eventManager");
         _;
@@ -105,7 +106,7 @@ contract OrderBookManager is
     mapping(uint256 => uint8) public eventResults;
 
     // ===== Upgradeable storage gap =====
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 

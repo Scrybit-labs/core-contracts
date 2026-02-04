@@ -27,24 +27,28 @@ contract EventManager is
 {
     // ============ Modifiers ============
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅事件创建者或所有者可调用
     modifier onlyEventCreator() {
         require(msg.sender == owner() || isEventCreator[msg.sender], "EventManager: not authorized");
         _;
     }
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅授权的预言机适配器可调用
     modifier onlyAuthorizedOracleAdapter() {
         require(authorizedOracleAdapters[msg.sender], "EventManager: not authorized oracle adapter");
         _;
     }
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 事件必须存在
     modifier eventMustExist(uint256 eventId) {
         require(eventId < events.length, "EventManager: event does not exist");
         _;
     }
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     /// @notice 仅事件创建者或所有者可操作对应事件
     modifier onlyEventCreatorOrOwner(uint256 eventId) {
         require(msg.sender == owner() || events[eventId].creator == msg.sender, "EventManager: not event creator");
@@ -75,7 +79,7 @@ contract EventManager is
     mapping(uint256 => bytes32) public eventOracleRequests;
 
     // ===== Upgradeable storage gap =====
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 

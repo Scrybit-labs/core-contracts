@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Script, console} from "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 
 import {MockOracleAdapterDeploy} from "../oracle/mock/MockOracleAdapterDeploy.s.sol";
 import {EventManagerDeploy} from "./EventManagerDeploy.s.sol";
@@ -43,6 +43,14 @@ contract Deploy is Script {
         initialOwner = vm.addr(ownerPrivKey);
 
         vm.deal(initialOwner, 10000e18);
+
+        mockOracleAdapterDeploy = new MockOracleAdapterDeploy();
+        eventManagerDeploy = new EventManagerDeploy();
+        feeVaultManagerDeploy = new FeeVaultManagerDeploy();
+        fundingManagerDeploy = new FundingManagerDeploy();
+        orderBookManagerDeploy = new OrderBookManagerDeploy();
+
+        linker = new ContractsLinker();
 
         mockOracleAdapterDeploy.setUp(initialOwner);
         eventManagerDeploy.setUp(initialOwner);
@@ -88,6 +96,7 @@ contract Deploy is Script {
 
     function _linkContractDeps() internal {
         linker.setUp(
+            initialOwner,
             address(mockOracleAdapter),
             address(eventManager),
             address(feeVaultManager),

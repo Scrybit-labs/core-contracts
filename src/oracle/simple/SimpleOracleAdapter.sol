@@ -40,6 +40,7 @@ contract SimpleOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeab
         oracleConsumer = _oracleConsumer;
     }
 
+    /// forge-lint: disable-next-item(unwrapped-modifier-logic)
     modifier onlyAuthorizedOracle() {
         if (!authorizedOracles[msg.sender]) {
             revert UnauthorizedOracle(msg.sender);
@@ -145,5 +146,5 @@ contract SimpleOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeab
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }

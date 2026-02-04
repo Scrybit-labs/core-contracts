@@ -12,7 +12,7 @@ interface IFundingManager {
     // ============ 常量 Constants ============
 
     /// @notice ETH 地址表示
-    function ETHAddress() external view returns (address);
+    function NATIVE_TOKEN() external view returns (address);
 
     /// @notice USD 统一精度(1e18 = 1 USD)
     function USD_PRECISION() external view returns (uint256);
@@ -168,7 +168,9 @@ interface IFundingManager {
      * @return tokens Token 地址数组
      * @return balances Token 数量数组 (按 Token 原始精度,等同于 token.balanceOf(user))
      */
-    function getAllTokenBalances(address user) external view returns (address[] memory tokens, uint256[] memory balances);
+    function getAllTokenBalances(
+        address user
+    ) external view returns (address[] memory tokens, uint256[] memory balances);
 
     /**
      * @notice FeeVaultManager 收取协议费用(扣减用户 USD 余额)
@@ -284,7 +286,10 @@ interface IFundingManager {
      * @return canRedeem 是否可领取
      * @return winningPosition 获胜持仓数量
      */
-    function canRedeemWinnings(uint256 eventId, address user) external view returns (bool canRedeem, uint256 winningPosition);
+    function canRedeemWinnings(
+        uint256 eventId,
+        address user
+    ) external view returns (bool canRedeem, uint256 winningPosition);
 
     /**
      * @notice 检查用户是否已领取
@@ -317,7 +322,7 @@ interface IFundingManager {
      * @param orderId 订单 ID
      * @return locked 锁定的 USD 数量
      */
-    function getOrderLockedUSD(uint256 orderId) external view returns (uint256);
+    function getOrderLockedUsd(uint256 orderId) external view returns (uint256);
 
     /**
      * @notice 获取订单锁定的 Long Token
