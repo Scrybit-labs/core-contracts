@@ -28,8 +28,14 @@ jobs:
       - name: Show Forge version
         run: forge --version
 
-      - name: Run Forge fmt
-        run: forge fmt --check
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JS dependencies
+        run: yarn install --immutable
+
+      - name: Run Prettier (Solidity)
+        run: yarn prettier --check "**/*.sol"
 
       - name: Run Forge build
         run: forge build --sizes

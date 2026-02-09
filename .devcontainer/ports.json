@@ -3,7 +3,7 @@
     "bind_ip": "192.168.2.3",
     "category": "custom",
     "container": 22,
-    "host": 2224,
+    "host": 2222,
     "label": "SSH Server",
     "lan_accessible": true
   },
@@ -11,7 +11,7 @@
     "bind_ip": "192.168.2.3",
     "category": "app",
     "container": 3000,
-    "host": 3003,
+    "host": 3001,
     "label": "Frontend/DApp",
     "lan_accessible": true
   },
@@ -19,7 +19,7 @@
     "bind_ip": "192.168.2.3",
     "category": "app",
     "container": 8545,
-    "host": 8547,
+    "host": 8545,
     "label": "Hardhat/Anvil Node",
     "lan_accessible": true
   },
@@ -27,7 +27,7 @@
     "bind_ip": "",
     "category": "debug",
     "container": 9229,
-    "host": 9231,
+    "host": 9229,
     "label": "Node Debugger",
     "lan_accessible": true
   }

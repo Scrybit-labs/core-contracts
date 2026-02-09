@@ -102,25 +102,34 @@ deploy-optimism-sepolia:
 
 # ============ Prediction Market Deployment ============
 deploy-prediction-local:
-	@forge script script/Deploy.s.sol:Deploy --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast -vv
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast -vv
 
 deploy-prediction-sepolia:
-	@forge script script/Deploy.s.sol:Deploy $(NETWORK_SEPOLIA)
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_SEPOLIA)
 
 deploy-prediction-roothash:
-	@forge script script/Deploy.s.sol:Deploy $(NETWORK_ROOTHASH)
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_ROOTHASH)
 
 deploy-prediction-hashkey:
-	@forge script script/Deploy.s.sol:Deploy $(NETWORK_HASHKEY)
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_HASHKEY)
 
 deploy-prediction-base-sepolia:
-	@forge script script/Deploy.s.sol:Deploy $(NETWORK_BASE_SEPOLIA)
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_BASE_SEPOLIA)
+
+deploy-prediction-base:
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_BASE)
 
 deploy-prediction-arbitrum-sepolia:
-	@forge script script/Deploy.s.sol:Deploy $(NETWORK_ARBITRUM_SEPOLIA)
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_ARBITRUM_SEPOLIA)
+
+deploy-prediction-arbitrum:
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_ARBITRUM)
 
 deploy-prediction-optimism-sepolia:
-	@forge script script/Deploy.s.sol:Deploy $(NETWORK_OPTIMISM_SEPOLIA)
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_OPTIMISM_SEPOLIA)
+
+deploy-prediction-optimism:
+	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_OPTIMISM)
 
 # Create deployments directory
 create-deployments-dir:

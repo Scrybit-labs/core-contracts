@@ -1,12 +1,12 @@
 # ⚠️ VERSION MANAGED BY dc TOOL ⚠️
 # These versions are replaced by dc during template instantiation
 ARG NODE_VERSION=latest
-ARG YARN_VERSION=4.12.0
+ARG YARN_VERSION=1.22.22
 FROM mcr.microsoft.com/devcontainers/javascript-node:${NODE_VERSION}
 
-# Install SSH server and tmux
+# Install SSH server, tmux, and gawk (required for ble.sh)
 RUN apt-get update && \
-    apt-get install -y openssh-server tmux && \
+    apt-get install -y openssh-server tmux gawk && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /run/sshd

@@ -6,7 +6,9 @@
         "dockerfile": "Dockerfile"
     },
     "containerEnv": {
-        "SSH_AUTH_SOCK": "/ssh-agent"
+        "COLORTERM": "truecolor",
+        "SSH_AUTH_SOCK": "/ssh-agent",
+        "STARSHIP_CONFIG": "/home/node/.config/starship/starship.toml"
     },
     "customizations": {
         "jetbrains": {
@@ -52,10 +54,10 @@
         }
     },
     "forwardPorts": [
-        8547,
-        3003,
-        9231,
-        2224
+        8545,
+        3001,
+        9229,
+        2222
     ],
     "mounts": [
         "source=${localEnv:HOME}/.codex/AGENTS.md,target=/tmp/codex-agents.md,type=bind,readonly",
@@ -64,19 +66,21 @@
         "source=${localEnv:HOME}/.config/anthropic-cc/cred.sh,target=/tmp/anthropic-cred.sh,type=bind,readonly",
         "source=${localEnv:HOME}/Dev/Utils/ClaudeCodeConfig/Standard Workflow.md,target=/tmp/claude-workflow.md,type=bind,readonly",
         "source=${localEnv:HOME}/.ssh/forwarded-agent.sock,target=/ssh-agent,type=bind",
-        "source=${localEnv:HOME}/.ssh/authorized_keys,target=/tmp/ssh-authorized-keys,type=bind,readonly"
+        "source=${localEnv:HOME}/.ssh/authorized_keys,target=/tmp/ssh-authorized-keys,type=bind,readonly",
+        "source=${localEnv:HOME}/.terminfo/x/xterm-ghostty,target=/tmp/xterm-ghostty.terminfo,type=bind,readonly",
+        "source=${localEnv:HOME}/.config/starship/starship.toml,target=/tmp/starship.toml,type=bind,readonly"
     ],
     "name": "${localWorkspaceFolderBasename}",
     "portsAttributes": {
-        "3003": {
+        "3001": {
             "label": "Frontend/DApp",
             "onAutoForward": "notify"
         },
-        "8547": {
+        "8545": {
             "label": "Hardhat/Anvil Node",
             "onAutoForward": "notify"
         },
-        "9231": {
+        "9229": {
             "label": "Node Debugger",
             "onAutoForward": "silent"
         }
@@ -86,11 +90,13 @@
     "remoteEnv": {
         "ANTHROPIC_AUTH_TOKEN": "${localEnv:ANTHROPIC_AUTH_TOKEN}",
         "ANTHROPIC_BASE_URL": "${localEnv:ANTHROPIC_BASE_URL}",
+        "COLORTERM": "truecolor",
         "GIT_AUTHOR_EMAIL": "m15388108558_1@163.com",
         "GIT_AUTHOR_NAME": "CocoaPuffs",
         "GIT_COMMITTER_EMAIL": "m15388108558_1@163.com",
         "GIT_COMMITTER_NAME": "CocoaPuffs",
-        "SSH_AUTH_SOCK": "/ssh-agent"
+        "SSH_AUTH_SOCK": "/ssh-agent",
+        "STARSHIP_CONFIG": "/home/node/.config/starship/starship.toml"
     },
     "remoteUser": "node",
     "runArgs": [
@@ -104,11 +110,11 @@
         "--sysctl=net.ipv4.tcp_keepalive_probes=5",
         "--sysctl=net.ipv4.tcp_fin_timeout=30",
         "--label=devcontainer.user=node",
-        "--label=dc.project.uid=1bf1566d80d8",
+        "--label=dc.project.uid=4fac1deb7437",
         "--label=dc.project.user=node",
-        "--publish=192.168.2.3:8547:8545",
-        "--publish=192.168.2.3:3003:3000",
-        "--publish=192.168.2.3:2224:22"
+        "--publish=192.168.2.3:8545:8545",
+        "--publish=192.168.2.3:3001:3000",
+        "--publish=192.168.2.3:2222:22"
     ],
     "shutdownAction": "stopContainer",
     "workspaceFolder": "/workspace",

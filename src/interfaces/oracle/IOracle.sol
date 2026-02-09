@@ -90,7 +90,7 @@ interface IOracle {
 
 /**
  * @title IOracleConsumer
- * @notice 预言机消费者接口 - EventPod 需要实现此接口
+ * @notice 预言机消费者接口 - EventManager 需要实现此接口
  * @dev 用于接收预言机结果回调
  */
 interface IOracleConsumer {
