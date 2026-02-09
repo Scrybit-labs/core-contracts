@@ -38,28 +38,68 @@ contract ContractsLinker is Script {
         vm.startPrank(owner);
 
         // EventManager and OracleAdapter
-        if (eventManager.defaultOracleAdapter() == address(0)) {
+        if (eventManager.defaultOracleAdapter() != address(mockOracleAdapter)) {
             eventManager.setDefaultOracleAdapter(address(mockOracleAdapter));
         }
-        if (mockOracleAdapter.oracleConsumer() == address(0)) {
+        if (mockOracleAdapter.oracleConsumer() != address(eventManager)) {
             mockOracleAdapter.setOracleConsumer(address(eventManager));
         }
-        eventManager.setOrderBookManager(address(orderBookManager));
+        if (eventManager.orderBookManager() == address(0)) {
+            eventManager.setOrderBookManager(address(orderBookManager));
+        } else {
+            _ensureAddress(eventManager.orderBookManager(), address(orderBookManager));
+        }
 
         // FeeVaultManager
-        feeVaultManager.setOrderBookManager(address(orderBookManager));
-        feeVaultManager.setFundingManager(address(fundingManager));
+        if (feeVaultManager.orderBookManager() == address(0)) {
+            feeVaultManager.setOrderBookManager(address(orderBookManager));
+        } else {
+            _ensureAddress(feeVaultManager.orderBookManager(), address(orderBookManager));
+        }
+        if (feeVaultManager.fundingManager() == address(0)) {
+            feeVaultManager.setFundingManager(address(fundingManager));
+        } else {
+            _ensureAddress(feeVaultManager.fundingManager(), address(fundingManager));
+        }
 
         // FundingManager
-        fundingManager.setOrderBookManager(address(orderBookManager));
-        fundingManager.setEventManager(address(eventManager));
-        fundingManager.setFeeVaultManager(address(feeVaultManager));
+        if (fundingManager.orderBookManager() == address(0)) {
+            fundingManager.setOrderBookManager(address(orderBookManager));
+        } else {
+            _ensureAddress(fundingManager.orderBookManager(), address(orderBookManager));
+        }
+        if (fundingManager.eventManager() == address(0)) {
+            fundingManager.setEventManager(address(eventManager));
+        } else {
+            _ensureAddress(fundingManager.eventManager(), address(eventManager));
+        }
+        if (fundingManager.feeVaultManager() == address(0)) {
+            fundingManager.setFeeVaultManager(address(feeVaultManager));
+        } else {
+            _ensureAddress(fundingManager.feeVaultManager(), address(feeVaultManager));
+        }
 
         // OrderBookManager
-        orderBookManager.setEventManager(address(eventManager));
-        orderBookManager.setFundingManager(address(fundingManager));
-        orderBookManager.setFeeVaultManager(address(feeVaultManager));
+        if (orderBookManager.eventManager() == address(0)) {
+            orderBookManager.setEventManager(address(eventManager));
+        } else {
+            _ensureAddress(orderBookManager.eventManager(), address(eventManager));
+        }
+        if (orderBookManager.fundingManager() == address(0)) {
+            orderBookManager.setFundingManager(address(fundingManager));
+        } else {
+            _ensureAddress(orderBookManager.fundingManager(), address(fundingManager));
+        }
+        if (orderBookManager.feeVaultManager() == address(0)) {
+            orderBookManager.setFeeVaultManager(address(feeVaultManager));
+        } else {
+            _ensureAddress(orderBookManager.feeVaultManager(), address(feeVaultManager));
+        }
 
         vm.stopPrank();
+    }
+
+    function _ensureAddress(address current, address expected) internal pure {
+        require(current == expected, "ContractsLinker: address mismatch");
     }
 }
