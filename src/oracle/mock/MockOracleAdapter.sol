@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "../../interfaces/oracle/IOracle.sol";
+import "../../interfaces/oracle/IPriceOracle.sol";
 
 interface IMockOracle {
     function requestResult(uint256 eventId, uint8 numOutcomes) external returns (uint256 requestId);
@@ -16,7 +17,7 @@ interface IMockOracle {
  * @title MockOracleAdapter
  * @notice Adapter that wraps MockOracle and translates callbacks to EventManager.
  */
-contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOracle {
+contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOracle, IPriceOracle {
     struct OracleRequest {
         bytes32 requestId;
         uint256 eventId;
@@ -163,6 +164,16 @@ contract MockOracleAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable
 
         require(oracleConsumer != address(0), "MockOracleAdapter: oracleConsumer not set");
         IOracleConsumer(oracleConsumer).fulfillResult(eventId, winningOutcomeIndex, proof);
+    }
+
+    // ============ IPriceOracle Implementation ============
+
+    /// @notice Returns hardcoded 1:1 USD price for all tokens (stablecoin assumption)
+    /// @param token The token address (unused in mock)
+    /// @return price Always returns 1e18 ($1.00)
+    function getTokenPrice(address token) external pure override returns (uint256 price) {
+        token;
+        return 1e18;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
