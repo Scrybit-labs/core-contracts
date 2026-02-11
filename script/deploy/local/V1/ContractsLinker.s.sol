@@ -78,6 +78,9 @@ contract ContractsLinker is Script {
         } else {
             _ensureAddress(fundingManager.feeVaultManager(), address(feeVaultManager));
         }
+        if (address(fundingManager.priceOracleAdapter()) != address(mockOracleAdapter)) {
+            fundingManager.setPriceOracleAdapter(address(mockOracleAdapter));
+        }
 
         // OrderBookManager
         if (orderBookManager.eventManager() == address(0)) {

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IPriceOracle} from "../oracle/IPriceOracle.sol";
 
 /**
  * @title IFundingManager
@@ -54,6 +55,9 @@ interface IFundingManager {
 
     /// @notice Token 可用最低余额更新事件
     event MinTokenBalanceUsdUpdated(uint256 newMinBalance);
+
+    /// @notice Price oracle adapter updated event
+    event PriceOracleAdapterUpdated(address indexed newAdapter);
 
     // ============ 错误 Errors ============
 
@@ -389,6 +393,11 @@ interface IFundingManager {
     function feeVaultManager() external view returns (address);
 
     /**
+     * @notice Get the price oracle adapter
+     */
+    function priceOracleAdapter() external view returns (IPriceOracle);
+
+    /**
      * @notice 更新 OrderBookManager 地址
      * @param _orderBookManager 新地址
      */
@@ -405,4 +414,10 @@ interface IFundingManager {
      * @param _feeVaultManager 新地址
      */
     function setFeeVaultManager(address _feeVaultManager) external;
+
+    /**
+     * @notice Set the price oracle adapter address
+     * @param _priceOracleAdapter The price oracle adapter address
+     */
+    function setPriceOracleAdapter(address _priceOracleAdapter) external;
 }
