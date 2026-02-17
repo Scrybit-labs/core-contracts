@@ -8,8 +8,12 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+
+import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 
 import "../interfaces/core/IFundingManager.sol";
+import "../interfaces/oracle/IPriceOracle.sol";
 
 /**
  * @title FundingManager
@@ -25,6 +29,7 @@ contract FundingManager is
     IFundingManager
 {
     using SafeERC20 for IERC20;
+    using Address for address payable;
 
     // ============ 常量 Constants ============
 
@@ -71,6 +76,11 @@ contract FundingManager is
     /// @notice FeeVaultManager 合约地址(用于调用权限控制)
     address public feeVaultManager;
 
+    /// @notice Price oracle adapter for token-to-USD price lookups
+    /// @dev Typed as IPriceOracle for type-safe interface calls.
+    ///      When set to address(0), falls back to hardcoded 1:1 USD assumption.
+    IPriceOracle public priceOracleAdapter;
+
     /// @notice Token 配置
     struct TokenConfig {
         uint8 decimals;
@@ -82,6 +92,9 @@ contract FundingManager is
 
     /// @notice 支持的 Token 列表
     address[] public supportedTokens;
+
+    /// @notice Token existence tracking for O(1) duplicate check
+    mapping(address => bool) private _tokenExists;
 
     // ============ 余额管理 Balance Management ============
 
@@ -142,7 +155,7 @@ contract FundingManager is
     mapping(address => uint256) public totalWithdrawn;
 
     // ===== Upgradeable storage gap =====
-    uint256[50] private _gap;
+    uint256[49] private _gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
@@ -206,6 +219,10 @@ contract FundingManager is
         if (!config.isEnabled) revert TokenIsNotSupported(tokenAddress);
         if (amount == 0) revert LessThanZero(amount);
 
+        if (tokenAddress == NATIVE_TOKEN) {
+            require(ethValue == amount, "FundingManager: ETH amount mismatch");
+        }
+
         uint256 usdAmount = _normalizeToUsd(tokenAddress, amount);
         require(usdAmount >= minDepositPerTxnUsd, "FundingManager: deposit below minimum");
 
@@ -218,9 +235,7 @@ contract FundingManager is
         require(remainingUsd >= minTokenBalanceUsd, "FundingManager: token balance below minimum");
 
         // Handle token transfer
-        if (tokenAddress == NATIVE_TOKEN) {
-            require(ethValue == amount, "FundingManager: ETH amount mismatch");
-        } else {
+        if (tokenAddress != NATIVE_TOKEN) {
             IERC20(tokenAddress).safeTransferFrom(user, address(this), amount);
         }
 
@@ -284,8 +299,7 @@ contract FundingManager is
 
         // 转账
         if (tokenAddress == NATIVE_TOKEN) {
-            (bool sent, ) = withdrawAddress.call{value: tokenAmount}("");
-            require(sent, "FundingManager: failed to send ETH");
+            withdrawAddress.sendValue(tokenAmount);
         } else {
             IERC20(tokenAddress).safeTransfer(withdrawAddress, tokenAmount);
         }
@@ -307,18 +321,9 @@ contract FundingManager is
         config.decimals = decimals;
         config.isEnabled = enabled;
 
-        if (enabled) {
-            // 检查是否已存在,避免重复添加
-            bool exists = false;
-            for (uint256 i = 0; i < supportedTokens.length; i++) {
-                if (supportedTokens[i] == token) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) {
-                supportedTokens.push(token);
-            }
+        if (enabled && !_tokenExists[token]) {
+            supportedTokens.push(token);
+            _tokenExists[token] = true;
         }
 
         emit TokenConfigured(token, decimals, enabled, block.chainid);
@@ -330,7 +335,10 @@ contract FundingManager is
         if (config.decimals > 18) revert InvalidTokenDecimals(config.decimals);
 
         uint256 factor = 10 ** (18 - config.decimals);
-        return rawAmount * factor;
+        uint256 normalized = rawAmount * factor;
+
+        uint256 price = getTokenPrice(token);
+        return FixedPointMathLib.mulDiv(normalized, price, USD_PRECISION);
     }
 
     function _denormalizeFromUsd(address token, uint256 usdAmount) internal view returns (uint256) {
@@ -338,8 +346,11 @@ contract FundingManager is
         if (!config.isEnabled) revert TokenIsNotSupported(token);
         if (config.decimals > 18) revert InvalidTokenDecimals(config.decimals);
 
+        uint256 price = getTokenPrice(token);
+        uint256 normalized = FixedPointMathLib.mulDiv(usdAmount, USD_PRECISION, price);
+
         uint256 factor = 10 ** (18 - config.decimals);
-        return usdAmount / factor;
+        return normalized / factor;
     }
 
     /**
@@ -362,11 +373,16 @@ contract FundingManager is
 
     /**
      * @notice 获取 Token 价格 (USD, 1e18)
-     * @dev TODO: 接入 OracleAdapter 实时价格
+     * @dev Queries the price oracle adapter if configured, otherwise falls back to 1:1.
      */
-    function getTokenPrice(address token) external view returns (uint256) {
+    function getTokenPrice(address token) public view returns (uint256) {
         TokenConfig memory config = tokenConfigs[token];
         if (!config.isEnabled) revert TokenIsNotSupported(token);
+
+        if (address(priceOracleAdapter) != address(0)) {
+            return priceOracleAdapter.getTokenPrice(token);
+        }
+
         return 1e18;
     }
 
@@ -470,8 +486,7 @@ contract FundingManager is
         tokenLiquidity[token] -= amount;
 
         if (token == NATIVE_TOKEN) {
-            (bool sent, ) = payable(recipient).call{value: amount}("");
-            require(sent, "FundingManager: failed to send ETH");
+            payable(recipient).sendValue(amount);
         } else {
             IERC20(token).safeTransfer(recipient, amount);
         }
@@ -665,7 +680,10 @@ contract FundingManager is
         uint8 outcomeIndex
     ) external onlyOrderBookManager nonReentrant {
         // 计算买家支付金额
-        uint256 payment = (matchAmount * matchPrice) / PRICE_PRECISION;
+        uint256 payment = FixedPointMathLib.mulDiv(matchAmount, matchPrice, PRICE_PRECISION);
+
+        // Prevent zero-payment trades that would give buyer free Long Tokens
+        require(payment > 0 || matchAmount == 0, "FundingManager: payment rounds to zero");
 
         // 买家: 消耗锁定的 USD,获得 Long Token
         require(orderLockedUsd[buyOrderId] >= payment, "FundingManager: insufficient locked USD");
@@ -691,8 +709,12 @@ contract FundingManager is
      * @param eventId 事件 ID
      * @param winningOutcomeIndex 获胜结果索引
      */
-    function markEventSettled(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventManager nonReentrant {
+    function markEventSettled(uint256 eventId, uint8 winningOutcomeIndex) external onlyOrderBookManager nonReentrant {
         require(!eventSettled[eventId], "FundingManager: event already settled");
+
+        uint8[] storage outcomes = eventOutcomes[eventId];
+        require(outcomes.length > 0, "FundingManager: event not registered");
+        require(winningOutcomeIndex < outcomes.length, "FundingManager: invalid winning outcome");
 
         eventSettled[eventId] = true;
         eventWinningOutcome[eventId] = winningOutcomeIndex;
@@ -856,6 +878,16 @@ contract FundingManager is
         feeVaultManager = _feeVaultManager;
     }
 
+    /**
+     * @notice Set the price oracle adapter address
+     * @param _priceOracleAdapter The price oracle adapter address
+     */
+    function setPriceOracleAdapter(address _priceOracleAdapter) external onlyOwner nonReentrant {
+        require(_priceOracleAdapter != address(0), "FundingManager: invalid address");
+        priceOracleAdapter = IPriceOracle(_priceOracleAdapter);
+        emit PriceOracleAdapterUpdated(_priceOracleAdapter);
+    }
+
     // ============ 紧急控制 Emergency Control ============
 
     /**
@@ -863,5 +895,9 @@ contract FundingManager is
      */
     // ============ 接收 ETH ============
 
-    receive() external payable {}
+    /// @notice Reject direct ETH transfers to prevent accidental fund loss
+    receive() external payable {
+        // TODO: Route to deposit ETH when ETH support is fully enabled
+        revert("FundingManager: direct ETH transfers not supported");
+    }
 }

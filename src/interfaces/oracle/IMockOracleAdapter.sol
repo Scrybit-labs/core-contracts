@@ -2,12 +2,13 @@
 pragma solidity ^0.8.20;
 
 import {IOracle} from "./IOracle.sol";
+import {IPriceOracle} from "./IPriceOracle.sol";
 
 /**
  * @title IMockOracleAdapter
  * @notice MockOracleAdapter 接口
  */
-interface IMockOracleAdapter is IOracle {
+interface IMockOracleAdapter is IOracle, IPriceOracle {
     /**
      * @notice 初始化合约
      * @param initialOwner 初始所有者地址
