@@ -69,6 +69,9 @@ contract OrderBookManager is
     /// @notice 用户订单列表: user => orderIds[]
     mapping(address => uint256[]) public userOrders;
 
+    /// @notice 事件订单列表: eventId => orderIds[] (for efficient cancellation during settlement)
+    mapping(uint256 => uint256[]) internal eventOrderIds;
+
     // ============ 持仓管理 Position Management ============
 
     /// @notice 用户持仓: eventId => outcomeIndex => user => position
@@ -606,6 +609,9 @@ contract OrderBookManager is
             .enqueueOrder(
                 order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price), key
             );
+
+        // Track order ID for this event (for efficient cancellation during settlement)
+        eventOrderIds[order.eventId].push(orderId);
     }
 
     /**
@@ -697,14 +703,15 @@ contract OrderBookManager is
     // Internal: cancel & settle 撤单与结算
     // ------------------------------------------------------------
     function _cancelAllPendingOrders(uint256 eventId) internal {
-        // Iterate through all orders and cancel those belonging to this event
-        // Note: This is O(n) where n is total orders, but it's only called during settlement
-        // which is infrequent. A more optimized approach would track orders per event.
-        for (uint256 orderId = 1; orderId < nextOrderId; orderId++) {
+        // Iterate only through orders for this specific event - O(m) where m = orders for this event
+        uint256[] storage orderIds = eventOrderIds[eventId];
+        uint256 length = orderIds.length;
+
+        for (uint256 i = 0; i < length; i++) {
+            uint256 orderId = orderIds[i];
             OrderStruct.Order storage order = orders[orderId];
 
-            // Skip if not this event or already completed/cancelled
-            if (order.eventId != eventId) continue;
+            // Skip if already completed/cancelled
             if (order.status != OrderStruct.OrderStatus.Pending && order.status != OrderStruct.OrderStatus.Partial) {
                 continue;
             }

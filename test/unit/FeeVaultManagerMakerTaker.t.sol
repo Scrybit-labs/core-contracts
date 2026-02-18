@@ -144,9 +144,10 @@ contract FeeVaultManagerMakerTakerTest is Test {
         uint256 makerFee = feeVaultManager.calculateMakerTakerFee(amount, true);
         uint256 takerFee = feeVaultManager.calculateMakerTakerFee(amount, false);
 
-        // Fees should round down to 0 for very small amounts
-        assertEq(makerFee, 0, "Maker fee should round down to 0");
-        assertEq(takerFee, 0, "Taker fee should round down to 0");
+        // Fees should round up to prevent undercharging (ceiling division)
+        // For 1 wei: (1 * 5 + 9999) / 10000 = 1, (1 * 25 + 9999) / 10000 = 1
+        assertEq(makerFee, 1, "Maker fee should round up to 1");
+        assertEq(takerFee, 1, "Taker fee should round up to 1");
     }
 
     function testCalculateMakerTakerFee_PrecisionTest() public {

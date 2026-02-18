@@ -247,7 +247,8 @@ contract FeeVaultManager is
 
         if (rate == 0) return 0;
 
-        fee = (amount * rate) / FEE_PRECISION;
+        // Use ceiling division to avoid undercharging fees
+        fee = (amount * rate + FEE_PRECISION - 1) / FEE_PRECISION;
     }
 
     /**
@@ -263,7 +264,8 @@ contract FeeVaultManager is
 
         if (rate == 0) return 0;
 
-        fee = (amount * rate) / FEE_PRECISION;
+        // Use ceiling division to avoid undercharging fees
+        fee = (amount * rate + FEE_PRECISION - 1) / FEE_PRECISION;
     }
 
     // ============ 管理功能 Admin Functions ============
