@@ -69,24 +69,6 @@ contract OrderBookManager is
     /// @notice 用户订单列表: user => orderIds[]
     mapping(address => uint256[]) public userOrders;
 
-    // ============ 订单簿结构 Order Book Structure ============
-
-    /// @notice 结果订单簿(买单和卖单按价格分组)
-    struct OutcomeOrderBook {
-        mapping(uint256 => uint256[]) buyOrdersByPrice; // price => orderIds[]
-        uint256[] buyPriceLevels; // 买单价格档位(降序)
-        mapping(uint256 => uint256[]) sellOrdersByPrice; // price => orderIds[]
-        uint256[] sellPriceLevels; // 卖单价格档位(升序)
-    }
-
-    /// @notice 事件订单簿(每个结果一个订单簿)
-    struct EventOrderBook {
-        mapping(uint8 => OutcomeOrderBook) outcomeOrderBooks;
-    }
-
-    /// @notice 事件订单簿映射: eventId => EventOrderBook
-    mapping(uint256 => EventOrderBook) internal eventOrderBooks;
-
     // ============ 持仓管理 Position Management ============
 
     /// @notice 用户持仓: eventId => outcomeIndex => user => position
@@ -350,17 +332,15 @@ contract OrderBookManager is
     // ------------------------------------------------------------
     function _matchOrder(uint256 orderId) internal {
         OrderStruct.Order storage order = orders[orderId];
-        EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
 
         if (order.side == OrderStruct.Side.Buy) {
-            _matchBuy(orderId, outcomeOrderBook);
+            _matchBuy(orderId);
         } else {
-            _matchSell(orderId, outcomeOrderBook);
+            _matchSell(orderId);
         }
     }
 
-    function _matchBuy(uint256 buyOrderId, OutcomeOrderBook storage book) internal {
+    function _matchBuy(uint256 buyOrderId) internal {
         OrderStruct.Order storage buyOrder = orders[buyOrderId];
 
         require(orderStorage != address(0), "OrderStorage not set");
@@ -422,7 +402,7 @@ contract OrderBookManager is
         }
     }
 
-    function _matchSell(uint256 sellOrderId, OutcomeOrderBook storage book) internal {
+    function _matchSell(uint256 sellOrderId) internal {
         OrderStruct.Order storage sellOrder = orders[sellOrderId];
 
         require(orderStorage != address(0), "OrderStorage not set");
@@ -651,67 +631,6 @@ contract OrderBookManager is
         }
     }
 
-    function _insertBuyPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        uint256 i = 0;
-        while (i < orderBook.buyPriceLevels.length && orderBook.buyPriceLevels[i] > price) {
-            i++;
-        }
-        if (i < orderBook.buyPriceLevels.length && orderBook.buyPriceLevels[i] == price) return;
-
-        orderBook.buyPriceLevels.push(0);
-        for (uint256 j = orderBook.buyPriceLevels.length - 1; j > i; j--) {
-            orderBook.buyPriceLevels[j] = orderBook.buyPriceLevels[j - 1];
-        }
-        orderBook.buyPriceLevels[i] = price;
-    }
-
-    function _insertSellPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        uint256 i = 0;
-        while (i < orderBook.sellPriceLevels.length && orderBook.sellPriceLevels[i] < price) {
-            i++;
-        }
-        if (i < orderBook.sellPriceLevels.length && orderBook.sellPriceLevels[i] == price) return;
-
-        orderBook.sellPriceLevels.push(0);
-        for (uint256 j = orderBook.sellPriceLevels.length - 1; j > i; j--) {
-            orderBook.sellPriceLevels[j] = orderBook.sellPriceLevels[j - 1];
-        }
-        orderBook.sellPriceLevels[i] = price;
-    }
-
-    function _removeBuyPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        for (uint256 i = 0; i < orderBook.buyPriceLevels.length; i++) {
-            if (orderBook.buyPriceLevels[i] == price) {
-                for (uint256 j = i; j < orderBook.buyPriceLevels.length - 1; j++) {
-                    orderBook.buyPriceLevels[j] = orderBook.buyPriceLevels[j + 1];
-                }
-                orderBook.buyPriceLevels.pop();
-                break;
-            }
-        }
-    }
-
-    function _removeSellPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        for (uint256 i = 0; i < orderBook.sellPriceLevels.length; i++) {
-            if (orderBook.sellPriceLevels[i] == price) {
-                for (uint256 j = i; j < orderBook.sellPriceLevels.length - 1; j++) {
-                    orderBook.sellPriceLevels[j] = orderBook.sellPriceLevels[j + 1];
-                }
-                orderBook.sellPriceLevels.pop();
-                break;
-            }
-        }
-    }
-
-    function _totalAtPrice(uint256[] storage orderIds) internal view returns (uint256 total) {
-        for (uint256 i = 0; i < orderIds.length; i++) {
-            OrderStruct.Order storage order = orders[orderIds[i]];
-            if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial) {
-                total += order.remainingAmount;
-            }
-        }
-    }
-
     /**
      * @notice Calculate total amount at a specific price using OrderStorage
      * @dev Iterates through the linked list of orders at the given price
@@ -778,60 +697,30 @@ contract OrderBookManager is
     // Internal: cancel & settle 撤单与结算
     // ------------------------------------------------------------
     function _cancelAllPendingOrders(uint256 eventId) internal {
-        uint8 outcomeCount = eventOutcomeCount[eventId];
-        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        for (uint8 i = 0; i < outcomeCount; i++) {
-            OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[i];
-            _cancelMarketOrders(outcomeOrderBook);
-        }
-    }
+        // Iterate through all orders and cancel those belonging to this event
+        // Note: This is O(n) where n is total orders, but it's only called during settlement
+        // which is infrequent. A more optimized approach would track orders per event.
+        for (uint256 orderId = 1; orderId < nextOrderId; orderId++) {
+            OrderStruct.Order storage order = orders[orderId];
 
-    function _cancelMarketOrders(OutcomeOrderBook storage marketOrderBook) internal {
-        for (uint256 i = 0; i < marketOrderBook.buyPriceLevels.length; i++) {
-            uint256 price = marketOrderBook.buyPriceLevels[i];
-            uint256[] storage ids = marketOrderBook.buyOrdersByPrice[price];
-            for (uint256 j = 0; j < ids.length; j++) {
-                OrderStruct.Order storage order = orders[ids[j]];
-                if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
-                {
-                    order.status = OrderStruct.OrderStatus.Cancelled;
-
-                    // 集成 FundingManager: 批量撤单解锁资金或 Long Token
-                    if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager)
-                            .unlockForOrder(
-                                order.maker,
-                                ids[j], // orderId
-                                order.side == OrderStruct.Side.Buy, // 是否为买单
-                                order.eventId,
-                                order.outcomeIndex
-                            );
-                    }
-                }
+            // Skip if not this event or already completed/cancelled
+            if (order.eventId != eventId) continue;
+            if (order.status != OrderStruct.OrderStatus.Pending && order.status != OrderStruct.OrderStatus.Partial) {
+                continue;
             }
-        }
 
-        for (uint256 i = 0; i < marketOrderBook.sellPriceLevels.length; i++) {
-            uint256 price = marketOrderBook.sellPriceLevels[i];
-            uint256[] storage ids = marketOrderBook.sellOrdersByPrice[price];
-            for (uint256 j = 0; j < ids.length; j++) {
-                OrderStruct.Order storage order = orders[ids[j]];
-                if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
-                {
-                    order.status = OrderStruct.OrderStatus.Cancelled;
+            // Cancel the order
+            order.status = OrderStruct.OrderStatus.Cancelled;
 
-                    // 集成 FundingManager: 批量撤单解锁资金或 Long Token
-                    if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager)
-                            .unlockForOrder(
-                                order.maker,
-                                ids[j], // orderId
-                                order.side == OrderStruct.Side.Buy, // 是否为买单
-                                order.eventId,
-                                order.outcomeIndex
-                            );
-                    }
-                }
+            // Unlock funds or Long Tokens
+            if (order.remainingAmount > 0) {
+                IFundingManager(fundingManager).unlockForOrder(
+                    order.maker,
+                    orderId,
+                    order.side == OrderStruct.Side.Buy, // isBuy
+                    order.eventId,
+                    order.outcomeIndex
+                );
             }
         }
     }

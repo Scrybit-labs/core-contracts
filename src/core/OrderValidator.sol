@@ -24,10 +24,10 @@ abstract contract OrderValidator is EIP712Upgradeable, IOrderValidator {
 
     // ============ State Variables ============
 
-    /// @notice Tracks filled amount for each order
+    /// @notice Tracks filled amount for each order (reserved for future off-chain order matching)
     mapping(OrderKey => uint128) public orderFilledAmount;
 
-    /// @notice Tracks cancelled orders
+    /// @notice Tracks cancelled orders (reserved for future off-chain order matching)
     mapping(OrderKey => bool) public orderCancelled;
 
     // ============ Validation Functions ============
