@@ -223,15 +223,14 @@ contract FundingManager is
             require(ethValue == amount, "FundingManager: ETH amount mismatch");
         }
 
-        uint256 usdAmount = _normalizeToUsd(tokenAddress, amount);
+        uint256 usdAmount = _normalizeToUsdWithConfig(config, tokenAddress, amount);
         require(usdAmount >= minDepositPerTxnUsd, "FundingManager: deposit below minimum");
 
-        uint256 preBalance = tokenAddress == NATIVE_TOKEN
-            ? user.balance + ethValue
-            : IERC20(tokenAddress).balanceOf(user);
+        uint256 preBalance =
+            tokenAddress == NATIVE_TOKEN ? user.balance + ethValue : IERC20(tokenAddress).balanceOf(user);
         require(preBalance >= amount, "FundingManager: insufficient wallet balance");
 
-        uint256 remainingUsd = _normalizeToUsd(tokenAddress, preBalance - amount);
+        uint256 remainingUsd = _normalizeToUsdWithConfig(config, tokenAddress, preBalance - amount);
         require(remainingUsd >= minTokenBalanceUsd, "FundingManager: token balance below minimum");
 
         // Handle token transfer
@@ -270,12 +269,9 @@ contract FundingManager is
         _withdraw(msg.sender, tokenAddress, payable(msg.sender), usdAmount);
     }
 
-    function _withdraw(
-        address user,
-        address tokenAddress,
-        address payable withdrawAddress,
-        uint256 usdAmount
-    ) internal {
+    function _withdraw(address user, address tokenAddress, address payable withdrawAddress, uint256 usdAmount)
+        internal
+    {
         TokenConfig memory config = tokenConfigs[tokenAddress];
         if (!config.isEnabled) revert TokenIsNotSupported(tokenAddress);
         if (usdAmount == 0) revert LessThanZero(usdAmount);
@@ -285,7 +281,7 @@ contract FundingManager is
             revert InsufficientUsdBalance(user, usdAmount, availableBalance);
         }
 
-        uint256 tokenAmount = _denormalizeFromUsd(tokenAddress, usdAmount);
+        uint256 tokenAmount = _denormalizeFromUsdWithConfig(config, tokenAddress, usdAmount);
         uint256 availableLiquidity = tokenLiquidity[tokenAddress];
         if (availableLiquidity < tokenAmount) {
             revert InsufficientTokenLiquidity(tokenAddress, tokenAmount, availableLiquidity);
@@ -331,6 +327,21 @@ contract FundingManager is
 
     function _normalizeToUsd(address token, uint256 rawAmount) internal view returns (uint256) {
         TokenConfig memory config = tokenConfigs[token];
+        return _normalizeToUsdWithConfig(config, token, rawAmount);
+    }
+
+    /**
+     * @notice 将 Token 数量归一化为 USD (1e18) - 优化版本，接受预加载的 config
+     * @param config 预加载的 TokenConfig
+     * @param token Token 地址
+     * @param rawAmount Token 数量
+     * @return USD 数量 (1e18 精度)
+     */
+    function _normalizeToUsdWithConfig(TokenConfig memory config, address token, uint256 rawAmount)
+        internal
+        view
+        returns (uint256)
+    {
         if (!config.isEnabled) revert TokenIsNotSupported(token);
         if (config.decimals > 18) revert InvalidTokenDecimals(config.decimals);
 
@@ -343,6 +354,21 @@ contract FundingManager is
 
     function _denormalizeFromUsd(address token, uint256 usdAmount) internal view returns (uint256) {
         TokenConfig memory config = tokenConfigs[token];
+        return _denormalizeFromUsdWithConfig(config, token, usdAmount);
+    }
+
+    /**
+     * @notice 将 USD 数量反归一化为 Token 数量 - 优化版本，接受预加载的 config
+     * @param config 预加载的 TokenConfig
+     * @param token Token 地址
+     * @param usdAmount USD 数量 (1e18 精度)
+     * @return Token 数量 (按 Token 原始精度)
+     */
+    function _denormalizeFromUsdWithConfig(TokenConfig memory config, address token, uint256 usdAmount)
+        internal
+        view
+        returns (uint256)
+    {
         if (!config.isEnabled) revert TokenIsNotSupported(token);
         if (config.decimals > 18) revert InvalidTokenDecimals(config.decimals);
 
@@ -424,9 +450,11 @@ contract FundingManager is
      * @return tokens Token 地址数组
      * @return balances Token 数量数组 (按 Token 原始精度)
      */
-    function getAllTokenBalances(
-        address user
-    ) external view returns (address[] memory tokens, uint256[] memory balances) {
+    function getAllTokenBalances(address user)
+        external
+        view
+        returns (address[] memory tokens, uint256[] memory balances)
+    {
         uint256 enabledCount = 0;
         for (uint256 i = 0; i < supportedTokens.length; i++) {
             if (tokenConfigs[supportedTokens[i]].isEnabled) {
@@ -469,11 +497,11 @@ contract FundingManager is
      * @param amount Token 数量
      * @param recipient 接收地址
      */
-    function withdrawLiquidity(
-        address token,
-        uint256 amount,
-        address recipient
-    ) external onlyFeeVaultManager nonReentrant {
+    function withdrawLiquidity(address token, uint256 amount, address recipient)
+        external
+        onlyFeeVaultManager
+        nonReentrant
+    {
         if (amount == 0) revert LessThanZero(amount);
         TokenConfig memory config = tokenConfigs[token];
         if (!config.isEnabled) revert TokenIsNotSupported(token);
@@ -628,13 +656,11 @@ contract FundingManager is
      * @param eventId 事件 ID
      * @param outcomeIndex 结果索引
      */
-    function unlockForOrder(
-        address user,
-        uint256 orderId,
-        bool isBuyOrder,
-        uint256 eventId,
-        uint8 outcomeIndex
-    ) external onlyOrderBookManager nonReentrant {
+    function unlockForOrder(address user, uint256 orderId, bool isBuyOrder, uint256 eventId, uint8 outcomeIndex)
+        external
+        onlyOrderBookManager
+        nonReentrant
+    {
         if (isBuyOrder) {
             // 买单: 解锁 USD
             uint256 lockedAmount = orderLockedUsd[orderId];
@@ -800,10 +826,11 @@ contract FundingManager is
      * @return canRedeem 是否可领取
      * @return winningPosition 获胜持仓数量
      */
-    function canRedeemWinnings(
-        uint256 eventId,
-        address user
-    ) external view returns (bool canRedeem, uint256 winningPosition) {
+    function canRedeemWinnings(uint256 eventId, address user)
+        external
+        view
+        returns (bool canRedeem, uint256 winningPosition)
+    {
         if (!eventSettled[eventId]) return (false, 0);
         if (userHasRedeemed[eventId][user]) return (false, 0);
 
