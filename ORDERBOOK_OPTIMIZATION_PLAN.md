@@ -281,7 +281,7 @@ function calculateMakerTakerFee(
     bool isMaker
 ) external view returns (uint256 fee) {
     string memory feeType = isMaker ? "maker_execution" : "taker_execution";
-    bytes32 key = EfficientHashLib.hash(bytes(feeType));
+    bytes32 key = keccack256(hash(bytes(feeType)));
     uint256 rate = feeRates[key];
     return (amount * rate) / FEE_PRECISION;
 }

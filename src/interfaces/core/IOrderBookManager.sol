@@ -1,40 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+import {OrderStruct} from "../../library/OrderStruct.sol";
+
 interface IOrderBookManager {
-    enum OrderSide {
-        Buy,
-        Sell
-    }
-
-    enum OrderStatus {
-        Pending,
-        Partial,
-        Filled,
-        Cancelled
-    }
-
-    struct Order {
-        uint256 orderId;
-        address user;
-        uint256 eventId;
-        uint8 outcomeIndex;
-        OrderSide side;
-        uint256 price;
-        uint256 amount;
-        uint256 filledAmount;
-        uint256 remainingAmount;
-        OrderStatus status;
-        uint256 timestamp;
-        address tokenAddress;
-    }
-
     event OrderPlaced(
         uint256 indexed orderId,
         address indexed user,
         uint256 indexed eventId,
         uint8 outcomeIndex,
-        OrderSide side,
+        OrderStruct.Side side,
         uint256 price,
         uint256 amount
     );
@@ -95,7 +70,7 @@ interface IOrderBookManager {
     function placeOrder(
         uint256 eventId,
         uint8 outcomeIndex,
-        OrderSide side,
+        OrderStruct.Side side,
         uint256 price,
         uint256 amount,
         address tokenAddress
@@ -118,7 +93,7 @@ interface IOrderBookManager {
      * @param orderId 订单 ID
      * @return order 订单详情
      */
-    function getOrder(uint256 orderId) external view returns (Order memory order);
+    function getOrder(uint256 orderId) external view returns (OrderStruct.Order memory order);
 
     /**
      * @notice 获取用户持仓

@@ -15,20 +15,35 @@ type OrderKey is bytes32;
 library OrderStruct {
     /// @notice 订单方向枚举
     enum Side {
-        List, // 卖单（挂单出售）
-        Bid // 买单（出价购买）
+        Sell, // 卖单（挂单出售）- 原 List
+        Buy // 买单（出价购买）- 原 Bid
     }
 
-    /// @notice 订单结构
-    /// @dev 包含订单的所有必要信息
-    ///需要补充订单结构的其他字段
+    /// @notice 订单状态枚举
+    enum OrderStatus {
+        Pending, // 待成交
+        Partial, // 部分成交
+        Filled, // 完全成交
+        Cancelled // 已取消
+    }
+
+    /// @notice 订单结构（统一版本）
+    /// @dev 包含所有必要字段，支持完整的订单生命周期管理
     struct Order {
-        Side side; // 订单方向（List 或 Bid）
+        uint256 orderId; // 订单 ID（用于 OrderBookManager）
+        uint256 eventId; // 事件 ID
         address maker; // 订单创建者地址
+        uint8 outcomeIndex; // 结果索引
+        Side side; // 订单方向
+        uint128 price; // 订单价格
+        uint128 amount; // 订单数量
+        uint128 filledAmount; // 已成交数量
+        uint128 remainingAmount; // 剩余数量
+        OrderStatus status; // 订单状态
+        uint64 timestamp; // 创建时间戳
         uint64 expiry; // 过期时间（0 表示永不过期）
         uint64 salt; // 随机盐值（防止订单重复）
-        Price price; // 订单价格
-        uint96 amount; // 订单数量
+        address tokenAddress; // Token 地址
     }
 
     /// @notice 数据库订单结构（用于链表存储）
@@ -57,22 +72,32 @@ library OrderStruct {
     OrderKey public constant ORDERKEY_SENTINEL = OrderKey.wrap(0x0);
 
     /// @notice Order 结构的 EIP-712 类型哈希
-    /// @dev 用于链下签名验证，包含嵌套的 Asset 类型
+    /// @dev 用于链下签名验证，只包含核心订单字段（不包括运行时状态）
     bytes32 public constant ORDER_TYPEHASH = keccak256(
-        "Order(uint8 side,address maker,uint64 expiry,uint64 salt,uint128 price,uint96 amount)"
+        "Order(uint256 eventId,address maker,uint8 outcomeIndex,uint8 side,uint128 price,uint128 amount,uint64 expiry,uint64 salt)"
     );
 
     /**
      * @notice 计算 Order 的哈希值（生成 OrderKey）
      * @dev 使用 EIP-712 标准计算订单的唯一标识符
-     *      哈希包含订单的所有字段，确保唯一性
+     *      只包含核心订单字段，不包括运行时状态（orderId, filledAmount, status等）
      * @param order 订单结构
      * @return OrderKey 订单的唯一标识符
      */
     function hash(Order memory order) internal pure returns (OrderKey) {
         return OrderKey.wrap(
             keccak256(
-                abi.encode(ORDER_TYPEHASH, order.side, order.maker, order.expiry, order.salt, order.price, order.amount)
+                abi.encode(
+                    ORDER_TYPEHASH,
+                    order.eventId,
+                    order.maker,
+                    order.outcomeIndex,
+                    order.side,
+                    order.price,
+                    order.amount,
+                    order.expiry,
+                    order.salt
+                )
             )
         );
     }

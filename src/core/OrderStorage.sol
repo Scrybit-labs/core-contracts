@@ -4,6 +4,9 @@ pragma solidity 0.8.33;
 import {OrderKey, OrderStruct} from "../library/OrderStruct.sol";
 import {RedBlackTreeLibrary, Price} from "../library/RedBlackTreeLibrary.sol";
 import {IOrderStorage} from "../interfaces/core/IOrderStorage.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
  * @title OrderStorage
@@ -12,8 +15,19 @@ import {IOrderStorage} from "../interfaces/core/IOrderStorage.sol";
  *      Layer 2: Order Queues (Linked List) - O(1) FIFO order management
  *      Layer 3: Global Orders (Mapping) - O(1) order lookup
  */
-contract OrderStorage is IOrderStorage {
+contract OrderStorage is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOrderStorage {
     using RedBlackTreeLibrary for RedBlackTreeLibrary.Tree;
+
+    // ============ Access Control ============
+
+    /// @notice Authorized OrderBookManager address
+    address public orderBookManager;
+
+    /// @notice Modifier to restrict access to only OrderBookManager
+    modifier onlyOrderBookManager() {
+        require(msg.sender == orderBookManager, "OrderStorage: only OrderBookManager");
+        _;
+    }
 
     // ============ Storage ============
 
@@ -35,7 +49,7 @@ contract OrderStorage is IOrderStorage {
      * @notice Insert a new price level into the price tree
      * @dev Only inserts if the price doesn't already exist
      */
-    function insertPrice(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external {
+    function insertPrice(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external onlyOrderBookManager {
         uint8 side = isBuy ? 0 : 1;
         RedBlackTreeLibrary.Tree storage tree = priceTrees[eventId][outcomeIndex][side];
         Price priceKey = Price.wrap(price);
@@ -49,7 +63,7 @@ contract OrderStorage is IOrderStorage {
      * @notice Remove a price level from the price tree
      * @dev Only removes if the price exists
      */
-    function removePrice(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external {
+    function removePrice(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external onlyOrderBookManager {
         uint8 side = isBuy ? 0 : 1;
         RedBlackTreeLibrary.Tree storage tree = priceTrees[eventId][outcomeIndex][side];
         Price priceKey = Price.wrap(price);
@@ -98,7 +112,10 @@ contract OrderStorage is IOrderStorage {
      * @notice Enqueue an order at a specific price level (FIFO)
      * @dev Appends to the tail of the queue
      */
-    function enqueueOrder(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price, OrderKey key) external {
+    function enqueueOrder(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price, OrderKey key)
+        external
+        onlyOrderBookManager
+    {
         uint8 side = isBuy ? 0 : 1;
         Price priceKey = Price.wrap(price);
         OrderStruct.OrderQueue storage queue = orderQueues[eventId][outcomeIndex][side][priceKey];
@@ -119,7 +136,11 @@ contract OrderStorage is IOrderStorage {
      * @dev Removes from the head of the queue
      * @return The dequeued order key
      */
-    function dequeueOrder(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external returns (OrderKey) {
+    function dequeueOrder(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price)
+        external
+        onlyOrderBookManager
+        returns (OrderKey)
+    {
         uint8 side = isBuy ? 0 : 1;
         Price priceKey = Price.wrap(price);
         OrderStruct.OrderQueue storage queue = orderQueues[eventId][outcomeIndex][side][priceKey];
@@ -174,7 +195,7 @@ contract OrderStorage is IOrderStorage {
     /**
      * @notice Store an order in the global order mapping
      */
-    function storeOrder(OrderKey key, OrderStruct.DBOrder calldata order) external {
+    function storeOrder(OrderKey key, OrderStruct.DBOrder calldata order) external onlyOrderBookManager {
         orders[key] = order;
     }
 
@@ -189,7 +210,32 @@ contract OrderStorage is IOrderStorage {
     /**
      * @notice Delete an order from the global order mapping
      */
-    function deleteOrder(OrderKey key) external {
+    function deleteOrder(OrderKey key) external onlyOrderBookManager {
         delete orders[key];
     }
+
+    // ============ Initialization & Access Control ============
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init(initialOwner);
+    }
+
+    /**
+     * @notice Set the OrderBookManager address
+     * @param _orderBookManager The OrderBookManager address
+     */
+    function setOrderBookManager(address _orderBookManager) external onlyOwner {
+        require(orderBookManager == address(0), "OrderStorage: already set");
+        require(_orderBookManager != address(0), "OrderStorage: invalid address");
+        orderBookManager = _orderBookManager;
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    // ===== Upgradeable storage gap =====
+    uint256[50] private _gap;
 }
