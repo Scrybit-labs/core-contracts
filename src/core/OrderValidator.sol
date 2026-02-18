@@ -141,4 +141,10 @@ abstract contract OrderValidator is EIP712Upgradeable, IOrderValidator {
     function _getFilledAmount(OrderKey key) internal view returns (uint128) {
         return orderFilledAmount[key];
     }
+
+    /**
+     * @dev Storage gap for future upgrades
+     * @notice Reserves 50 storage slots for future state variables
+     */
+    uint256[50] private __gap;
 }

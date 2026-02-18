@@ -350,9 +350,6 @@ contract EventManager is
 
     // ============ 内部函数 Internal Functions ===========
 
-    function _isEventActive(uint256 eventId) internal view eventMustExist(eventId) returns (bool) {
-        return events[eventId].status == EventStatus.Active;
-    }
 
     /**
      * @notice 验证状态转换是否合法
