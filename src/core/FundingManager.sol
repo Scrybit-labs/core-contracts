@@ -640,21 +640,25 @@ contract FundingManager is
         if (isBuyOrder) {
             // 买单: 解锁 USD
             uint256 lockedAmount = orderLockedUsd[orderId];
-            require(lockedAmount > 0, "FundingManager: no locked USD");
 
-            userUsdBalances[user] += lockedAmount;
-            orderLockedUsd[orderId] = 0;
-
-            emit FundsUnlocked(user, lockedAmount, eventId, outcomeIndex);
+            // FIX Issue #11: Handle zero surplus gracefully (no revert)
+            // When orders match at exact price, no surplus remains - this is valid
+            if (lockedAmount > 0) {
+                userUsdBalances[user] += lockedAmount;
+                orderLockedUsd[orderId] = 0;
+                emit FundsUnlocked(user, lockedAmount, eventId, outcomeIndex);
+            }
         } else {
             // 卖单: 解锁 Long Token
             uint256 lockedAmount = orderLockedLong[orderId];
-            require(lockedAmount > 0, "FundingManager: no locked Long");
 
-            longPositions[user][eventId][outcomeIndex] += lockedAmount;
-            orderLockedLong[orderId] = 0;
-
-            emit FundsUnlocked(user, lockedAmount, eventId, outcomeIndex);
+            // FIX Issue #11: Handle zero surplus gracefully (no revert)
+            // Sell orders typically have no surplus, but we check defensively
+            if (lockedAmount > 0) {
+                longPositions[user][eventId][outcomeIndex] += lockedAmount;
+                orderLockedLong[orderId] = 0;
+                emit FundsUnlocked(user, lockedAmount, eventId, outcomeIndex);
+            }
         }
     }
 
