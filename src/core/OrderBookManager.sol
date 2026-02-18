@@ -560,6 +560,18 @@ contract OrderBookManager is
         if (buyOrder.remainingAmount == 0) {
             buyOrder.status = OrderStruct.OrderStatus.Filled;
             _removeFromOrderBook(buyOrderId);
+
+            // 🔧 FIX Issue #11: Return surplus locked USD to buyer
+            // When buy order matches at better price (matchPrice < orderPrice),
+            // surplus USD remains locked. This call returns it to user's balance.
+            // Example: Order at 8000, match at 7000 → 10 USD surplus returned
+            IFundingManager(fundingManager).unlockForOrder(
+                buyOrder.maker,
+                buyOrderId,
+                true, // isBuyOrder
+                buyOrder.eventId,
+                buyOrder.outcomeIndex
+            );
         } else if (buyOrder.filledAmount > 0) {
             buyOrder.status = OrderStruct.OrderStatus.Partial;
         }
@@ -567,6 +579,18 @@ contract OrderBookManager is
         if (sellOrder.remainingAmount == 0) {
             sellOrder.status = OrderStruct.OrderStatus.Filled;
             _removeFromOrderBook(sellOrderId);
+
+            // 🔧 FIX Issue #11: Unlock remaining funds for seller (consistency)
+            // Sell orders lock Long Tokens (fixed amount), not USD value.
+            // No surplus occurs (always consumes exact locked amount), but we call
+            // unlockForOrder() for code consistency and to handle edge cases.
+            IFundingManager(fundingManager).unlockForOrder(
+                sellOrder.maker,
+                sellOrderId,
+                false, // isBuyOrder
+                sellOrder.eventId,
+                sellOrder.outcomeIndex
+            );
         } else if (sellOrder.filledAmount > 0) {
             sellOrder.status = OrderStruct.OrderStatus.Partial;
         }
