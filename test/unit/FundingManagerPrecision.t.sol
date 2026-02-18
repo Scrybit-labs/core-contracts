@@ -6,7 +6,7 @@ import {StdStorage, stdStorage} from "forge-std/StdStorage.sol";
 
 import {FundingManager} from "../../src/core/FundingManager.sol";
 import {FundingManagerProxy} from "../../src/core/proxies/FundingManagerProxy.sol";
-import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract FundingManagerPrecisionTest is Test {
     using stdStorage for StdStorage;
@@ -141,7 +141,7 @@ contract FundingManagerPrecisionTest is Test {
         matchPrice = bound(matchPrice, 1, pricePrecision);
         matchAmount = bound(matchAmount, 1, type(uint256).max / pricePrecision);
 
-        uint256 payment = FixedPointMathLib.mulDiv(matchAmount, matchPrice, pricePrecision);
+        uint256 payment = Math.mulDiv(matchAmount, matchPrice, pricePrecision);
         vm.assume(payment > 0);
 
         uint256 buyOrderId = 9;
@@ -172,7 +172,7 @@ contract FundingManagerPrecisionTest is Test {
         uint256 matchAmount = type(uint256).max / fundingManager.PRICE_PRECISION();
         uint256 matchPrice = fundingManager.PRICE_PRECISION();
 
-        uint256 payment = FixedPointMathLib.mulDiv(matchAmount, matchPrice, fundingManager.PRICE_PRECISION());
+        uint256 payment = Math.mulDiv(matchAmount, matchPrice, fundingManager.PRICE_PRECISION());
 
         _setOrderLockedUsd(buyOrderId, payment);
         _setOrderLockedLong(sellOrderId, matchAmount);

@@ -103,6 +103,14 @@ interface IFeeVaultManager {
     function calculateFee(uint256 amount, string calldata feeType) external view returns (uint256 fee);
 
     /**
+     * @notice 计算 Maker-Taker 手续费
+     * @param amount 交易金额 (USD, 1e18)
+     * @param isMaker 是否为 Maker（true=Maker, false=Taker）
+     * @return fee 手续费金额
+     */
+    function calculateMakerTakerFee(uint256 amount, bool isMaker) external view returns (uint256 fee);
+
+    /**
      * @notice 获取 OrderBookManager 地址
      */
     function orderBookManager() external view returns (address);

@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
-import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "../interfaces/core/IFundingManager.sol";
 import "../interfaces/oracle/IPriceOracle.sol";
@@ -338,7 +338,7 @@ contract FundingManager is
         uint256 normalized = rawAmount * factor;
 
         uint256 price = getTokenPrice(token);
-        return FixedPointMathLib.mulDiv(normalized, price, USD_PRECISION);
+        return Math.mulDiv(normalized, price, USD_PRECISION);
     }
 
     function _denormalizeFromUsd(address token, uint256 usdAmount) internal view returns (uint256) {
@@ -347,7 +347,7 @@ contract FundingManager is
         if (config.decimals > 18) revert InvalidTokenDecimals(config.decimals);
 
         uint256 price = getTokenPrice(token);
-        uint256 normalized = FixedPointMathLib.mulDiv(usdAmount, USD_PRECISION, price);
+        uint256 normalized = Math.mulDiv(usdAmount, USD_PRECISION, price);
 
         uint256 factor = 10 ** (18 - config.decimals);
         return normalized / factor;
@@ -680,7 +680,7 @@ contract FundingManager is
         uint8 outcomeIndex
     ) external onlyOrderBookManager nonReentrant {
         // 计算买家支付金额
-        uint256 payment = FixedPointMathLib.mulDiv(matchAmount, matchPrice, PRICE_PRECISION);
+        uint256 payment = Math.mulDiv(matchAmount, matchPrice, PRICE_PRECISION);
 
         // Prevent zero-payment trades that would give buyer free Long Tokens
         require(payment > 0 || matchAmount == 0, "FundingManager: payment rounds to zero");

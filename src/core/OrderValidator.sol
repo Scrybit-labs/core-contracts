@@ -4,7 +4,6 @@ pragma solidity 0.8.33;
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {OrderStruct, OrderKey} from "../library/OrderStruct.sol";
-import {Price} from "../library/RedBlackTreeLibrary.sol";
 import {IOrderValidator} from "../interfaces/core/IOrderValidator.sol";
 
 /**
@@ -100,13 +99,7 @@ abstract contract OrderValidator is EIP712Upgradeable, IOrderValidator {
     function getOrderHash(OrderStruct.Order calldata order) public view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
-                OrderStruct.ORDER_TYPEHASH,
-                order.side,
-                order.maker,
-                order.expiry,
-                order.salt,
-                order.price,
-                order.amount
+                OrderStruct.ORDER_TYPEHASH, order.side, order.maker, order.expiry, order.salt, order.price, order.amount
             )
         );
         return _hashTypedDataV4(structHash);

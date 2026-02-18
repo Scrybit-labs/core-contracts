@@ -8,7 +8,7 @@ import {FundingManagerProxy} from "../../src/core/proxies/FundingManagerProxy.so
 import {MockOracleAdapter} from "../../src/oracle/mock/MockOracleAdapter.sol";
 import {IFundingManager} from "../../src/interfaces/core/IFundingManager.sol";
 import {IPriceOracle} from "../../src/interfaces/oracle/IPriceOracle.sol";
-import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract ConfigurablePriceOracle is IPriceOracle {
     mapping(address => uint256) public prices;
@@ -225,7 +225,7 @@ contract FundingManagerPriceOracleTest is Test {
 
     function testMulDiv_OneToOneIdentity() public {
         uint256 value = 987654321;
-        uint256 result = FixedPointMathLib.mulDiv(value, 1e18, 1e18);
+        uint256 result = Math.mulDiv(value, 1e18, 1e18);
         assertEq(result, value);
     }
 }

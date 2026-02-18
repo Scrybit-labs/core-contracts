@@ -23,7 +23,8 @@ contract OrderStorage is IOrderStorage {
 
     // Layer 2: Order queues
     // eventId => outcomeIndex => side => price => OrderQueue
-    mapping(uint256 => mapping(uint8 => mapping(uint8 => mapping(Price => OrderStruct.OrderQueue)))) internal orderQueues;
+    mapping(uint256 => mapping(uint8 => mapping(uint8 => mapping(Price => OrderStruct.OrderQueue)))) internal
+        orderQueues;
 
     // Layer 3: Global orders
     mapping(OrderKey => OrderStruct.DBOrder) internal orders;
@@ -118,10 +119,7 @@ contract OrderStorage is IOrderStorage {
      * @dev Removes from the head of the queue
      * @return The dequeued order key
      */
-    function dequeueOrder(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price)
-        external
-        returns (OrderKey)
-    {
+    function dequeueOrder(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external returns (OrderKey) {
         uint8 side = isBuy ? 0 : 1;
         Price priceKey = Price.wrap(price);
         OrderStruct.OrderQueue storage queue = orderQueues[eventId][outcomeIndex][side][priceKey];
@@ -163,11 +161,7 @@ contract OrderStorage is IOrderStorage {
      * @notice Check if a price level queue is empty
      * @return True if the queue is empty, false otherwise
      */
-    function isQueueEmpty(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price)
-        external
-        view
-        returns (bool)
-    {
+    function isQueueEmpty(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price) external view returns (bool) {
         uint8 side = isBuy ? 0 : 1;
         Price priceKey = Price.wrap(price);
         OrderStruct.OrderQueue storage queue = orderQueues[eventId][outcomeIndex][side][priceKey];
