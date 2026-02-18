@@ -130,9 +130,9 @@ contract FundingManager is
 
     // ============ 事件结果信息 Event Outcome Info ============
 
-    /// @notice 事件的所有结果索引: eventId => outcomeIndices[]
-    /// @dev 用于铸造完整集合时遍历所有结果
-    mapping(uint256 => uint8[]) public eventOutcomes;
+    /// @notice 事件的结果数量: eventId => outcomeCount
+    /// @dev 用于铸造完整集合时遍历所有结果，结果索引为 [0, 1, 2, ..., outcomeCount-1]
+    mapping(uint256 => uint8) public eventOutcomeCount;
 
     /// @notice 事件奖金池: eventId => prizePool (统一 USD)
     mapping(uint256 => uint256) public eventPrizePool;
@@ -502,12 +502,10 @@ contract FundingManager is
      * @param outcomeCount 结果数量
      */
     function registerEvent(uint256 eventId, uint8 outcomeCount) external onlyOrderBookManager nonReentrant {
-        require(eventOutcomes[eventId].length == 0, "FundingManager: event already registered");
+        require(eventOutcomeCount[eventId] == 0, "FundingManager: event already registered");
         require(outcomeCount > 0, "FundingManager: empty outcomes");
 
-        for (uint8 i = 0; i < outcomeCount; i++) {
-            eventOutcomes[eventId].push(i);
-        }
+        eventOutcomeCount[eventId] = outcomeCount;
     }
 
     /**
@@ -521,7 +519,7 @@ contract FundingManager is
 
     function _mintCompleteSet(address user, uint256 eventId, uint256 usdAmount) internal {
         require(usdAmount > 0, "FundingManager: amount must be greater than zero");
-        require(eventOutcomes[eventId].length > 0, "FundingManager: event not registered");
+        require(eventOutcomeCount[eventId] > 0, "FundingManager: event not registered");
         require(!eventSettled[eventId], "FundingManager: event already settled");
 
         uint256 availableBalance = userUsdBalances[user];
@@ -533,8 +531,8 @@ contract FundingManager is
         userUsdBalances[user] -= usdAmount;
 
         // 为每个 outcome 铸造 Long token
-        uint8[] memory outcomes = eventOutcomes[eventId];
-        for (uint8 i = 0; i < outcomes.length; i++) {
+        uint8 outcomeCount = eventOutcomeCount[eventId];
+        for (uint8 i = 0; i < outcomeCount; i++) {
             longPositions[user][eventId][i] += usdAmount;
         }
 
@@ -555,11 +553,11 @@ contract FundingManager is
 
     function _burnCompleteSet(address user, uint256 eventId, uint256 usdAmount) internal {
         require(usdAmount > 0, "FundingManager: amount must be greater than zero");
-        require(eventOutcomes[eventId].length > 0, "FundingManager: event not registered");
+        require(eventOutcomeCount[eventId] > 0, "FundingManager: event not registered");
 
         // 检查并销毁每个 outcome 的 Long token
-        uint8[] storage outcomes = eventOutcomes[eventId];
-        for (uint8 i = 0; i < outcomes.length; i++) {
+        uint8 outcomeCount = eventOutcomeCount[eventId];
+        for (uint8 i = 0; i < outcomeCount; i++) {
             uint256 position = longPositions[user][eventId][i];
             if (position < usdAmount) {
                 revert InsufficientLongPosition(user, eventId, i);
@@ -716,9 +714,9 @@ contract FundingManager is
     function markEventSettled(uint256 eventId, uint8 winningOutcomeIndex) external onlyOrderBookManager nonReentrant {
         require(!eventSettled[eventId], "FundingManager: event already settled");
 
-        uint8[] storage outcomes = eventOutcomes[eventId];
-        require(outcomes.length > 0, "FundingManager: event not registered");
-        require(winningOutcomeIndex < outcomes.length, "FundingManager: invalid winning outcome");
+        uint8 outcomeCount = eventOutcomeCount[eventId];
+        require(outcomeCount > 0, "FundingManager: event not registered");
+        require(winningOutcomeIndex < outcomeCount, "FundingManager: invalid winning outcome");
 
         eventSettled[eventId] = true;
         eventWinningOutcome[eventId] = winningOutcomeIndex;
