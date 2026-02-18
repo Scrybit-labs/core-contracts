@@ -12,8 +12,21 @@ import {OrderStruct, OrderKey} from "../../src/library/OrderStruct.sol";
  * @notice Concrete implementation of OrderValidator for testing
  */
 contract OrderValidatorHarness is OrderValidator {
+    // Mock event outcome counts for testing
+    mapping(uint256 => uint8) private mockEventOutcomeCount;
+
     function initialize() public initializer {
         __EIP712_init("OrderBook", "1");
+    }
+
+    // Implement abstract function for testing
+    function _getEventOutcomeCount(uint256 eventId) internal view override returns (uint8) {
+        return mockEventOutcomeCount[eventId];
+    }
+
+    // Helper function to set mock event outcome count for tests
+    function setMockEventOutcomeCount(uint256 eventId, uint8 outcomeCount) external {
+        mockEventOutcomeCount[eventId] = outcomeCount;
     }
 
     function markFilled(OrderKey key, uint128 amount) external {
@@ -57,6 +70,9 @@ contract OrderValidatorTest is Test {
         // Create maker with known private key for signature testing
         makerPrivateKey = 0x1234;
         maker = vm.addr(makerPrivateKey);
+
+        // Set up mock event with 3 outcomes for testing
+        validator.setMockEventOutcomeCount(EVENT_ID, 3);
     }
 
     // ============ Parameter Validation Tests ============
@@ -87,6 +103,34 @@ contract OrderValidatorTest is Test {
 
         assertFalse(valid, "Zero maker should fail");
         assertEq(reason, "Invalid maker address", "Wrong error message");
+    }
+
+    function testValidateOrderParams_EventNotRegistered_Fails() public {
+        (bool valid, string memory reason) = validator.validateOrderParams(
+            maker,
+            999, // Unregistered event
+            OUTCOME_INDEX,
+            VALID_PRICE,
+            VALID_AMOUNT,
+            FUTURE_EXPIRY
+        );
+
+        assertFalse(valid, "Unregistered event should fail");
+        assertEq(reason, "Event not registered", "Wrong error message");
+    }
+
+    function testValidateOrderParams_OutcomeIndexOutOfRange_Fails() public {
+        (bool valid, string memory reason) = validator.validateOrderParams(
+            maker,
+            EVENT_ID,
+            5, // Out of range (event has 3 outcomes: 0, 1, 2)
+            VALID_PRICE,
+            VALID_AMOUNT,
+            FUTURE_EXPIRY
+        );
+
+        assertFalse(valid, "Out of range outcome should fail");
+        assertEq(reason, "Outcome index out of range", "Wrong error message");
     }
 
     function testValidateOrderParams_ZeroPrice_Fails() public {

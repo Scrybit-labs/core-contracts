@@ -30,11 +30,29 @@ abstract contract OrderValidator is EIP712Upgradeable, IOrderValidator {
     /// @notice Tracks cancelled orders (reserved for future off-chain order matching)
     mapping(OrderKey => bool) public orderCancelled;
 
+    // ============ Abstract Functions ============
+
+    /**
+     * @notice Get the outcome count for an event
+     * @dev Must be implemented by inheriting contract to enable event/outcome validation
+     * @param eventId The event ID to check
+     * @return The number of outcomes for the event (0 if event not registered)
+     */
+    function _getEventOutcomeCount(uint256 eventId) internal view virtual returns (uint8);
+
     // ============ Validation Functions ============
 
     /**
      * @notice Validate order parameters
-     * @dev Checks maker address, price alignment, amount, and expiry
+     * @dev Checks maker address, event/outcome validity, price alignment, amount, and expiry
+     * @param maker The maker address
+     * @param eventId The event ID
+     * @param outcomeIndex The outcome index
+     * @param price The order price (in basis points)
+     * @param amount The order amount
+     * @param expiry The order expiry timestamp (0 for no expiry)
+     * @return valid Whether all validations passed
+     * @return reason The reason for validation failure (empty if valid)
      */
     function validateOrderParams(
         address maker,
@@ -47,6 +65,15 @@ abstract contract OrderValidator is EIP712Upgradeable, IOrderValidator {
         // Validate maker address
         if (maker == address(0)) {
             return (false, "Invalid maker address");
+        }
+
+        // Validate eventId and outcomeIndex
+        uint8 outcomeCount = _getEventOutcomeCount(eventId);
+        if (outcomeCount == 0) {
+            return (false, "Event not registered");
+        }
+        if (outcomeIndex >= outcomeCount) {
+            return (false, "Outcome index out of range");
         }
 
         // Validate price range

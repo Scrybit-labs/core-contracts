@@ -808,4 +808,16 @@ contract OrderBookManager is
         require(_orderStorage != address(0), "OrderBookManager: invalid address");
         orderStorage = _orderStorage;
     }
+
+    // ============ OrderValidator Implementation ============
+
+    /**
+     * @notice Get the outcome count for an event
+     * @dev Implementation of abstract function from OrderValidator
+     * @param eventId The event ID to check
+     * @return The number of outcomes for the event (0 if event not registered)
+     */
+    function _getEventOutcomeCount(uint256 eventId) internal view override returns (uint8) {
+        return eventOutcomeCount[eventId];
+    }
 }
