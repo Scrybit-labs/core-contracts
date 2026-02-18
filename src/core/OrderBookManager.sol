@@ -187,24 +187,26 @@ contract OrderBookManager is
         // 卖单锁定 Long Token: amount
         uint256 requiredAmount = side == OrderStruct.Side.Buy ? tradeUsd : amount;
 
-        IFundingManager(fundingManager).lockForOrder(
-            user, // 用户地址
-            nextOrderId, // 订单 ID
-            side == OrderStruct.Side.Buy, // 是否为买单
-            requiredAmount, // 锁定数量
-            eventId, // 事件 ID
-            outcomeIndex // 结果索引
-        );
+        IFundingManager(fundingManager)
+            .lockForOrder(
+                user, // 用户地址
+                nextOrderId, // 订单 ID
+                side == OrderStruct.Side.Buy, // 是否为买单
+                requiredAmount, // 锁定数量
+                eventId, // 事件 ID
+                outcomeIndex // 结果索引
+            );
 
         // 收取手续费
         if (placementFee > 0 && feeVaultManager != address(0)) {
-            IFeeVaultManager(feeVaultManager).collectFee(
-                tokenAddress,
-                user, // 使用传入的真实用户地址
-                placementFee,
-                eventId,
-                "placement"
-            );
+            IFeeVaultManager(feeVaultManager)
+                .collectFee(
+                    tokenAddress,
+                    user, // 使用传入的真实用户地址
+                    placementFee,
+                    eventId,
+                    "placement"
+                );
         }
 
         orderId = nextOrderId++;
@@ -228,7 +230,10 @@ contract OrderBookManager is
 
         _matchOrder(orderId);
 
-        if (orders[orderId].status == OrderStruct.OrderStatus.Pending || orders[orderId].status == OrderStruct.OrderStatus.Partial) {
+        if (
+            orders[orderId].status == OrderStruct.OrderStatus.Pending
+                || orders[orderId].status == OrderStruct.OrderStatus.Partial
+        ) {
             _addToOrderBook(orderId);
         }
 
@@ -263,13 +268,14 @@ contract OrderBookManager is
 
         if (order.remainingAmount > 0) {
             // 集成 FundingManager: 解锁剩余未成交资金或 Long Token
-            IFundingManager(fundingManager).unlockForOrder(
-                order.maker,
-                orderId,
-                order.side == OrderStruct.Side.Buy, // 是否为买单
-                order.eventId,
-                order.outcomeIndex
-            );
+            IFundingManager(fundingManager)
+                .unlockForOrder(
+                    order.maker,
+                    orderId,
+                    order.side == OrderStruct.Side.Buy, // 是否为买单
+                    order.eventId,
+                    order.outcomeIndex
+                );
         }
 
         emit OrderCancelled(orderId, order.maker, order.remainingAmount);
@@ -360,21 +366,23 @@ contract OrderBookManager is
         require(orderStorage != address(0), "OrderStorage not set");
 
         // Get best ask price (lowest sell price) - O(log n)
-        uint128 bestAsk = IOrderStorage(orderStorage).getBestPrice(
-            buyOrder.eventId,
-            buyOrder.outcomeIndex,
-            false // isBuy = false for sell orders
-        );
+        uint128 bestAsk = IOrderStorage(orderStorage)
+            .getBestPrice(
+                buyOrder.eventId,
+                buyOrder.outcomeIndex,
+                false // isBuy = false for sell orders
+            );
 
         // Iterate through price levels while match is possible
         while (bestAsk != 0 && bestAsk <= uint128(buyOrder.price) && buyOrder.remainingAmount > 0) {
             // Get first order at this price (O(1))
-            OrderKey sellKey = IOrderStorage(orderStorage).peekOrder(
-                buyOrder.eventId,
-                buyOrder.outcomeIndex,
-                false, // isBuy = false
-                bestAsk
-            );
+            OrderKey sellKey = IOrderStorage(orderStorage)
+                .peekOrder(
+                    buyOrder.eventId,
+                    buyOrder.outcomeIndex,
+                    false, // isBuy = false
+                    bestAsk
+                );
 
             // Iterate through orders at this price level (linked list)
             while (OrderStruct.isNotSentinel(sellKey) && buyOrder.remainingAmount > 0) {
@@ -383,9 +391,8 @@ contract OrderBookManager is
 
                 // Skip invalid orders
                 if (
-                    sellOrder.status != OrderStruct.OrderStatus.Cancelled &&
-                    sellOrder.status != OrderStruct.OrderStatus.Filled &&
-                    sellOrder.remainingAmount > 0
+                    sellOrder.status != OrderStruct.OrderStatus.Cancelled
+                        && sellOrder.status != OrderStruct.OrderStatus.Filled && sellOrder.remainingAmount > 0
                 ) {
                     // Validate event and outcome match
                     if (buyOrder.eventId != sellOrder.eventId) {
@@ -405,12 +412,13 @@ contract OrderBookManager is
             }
 
             // Get next price level (next higher sell price) - O(log n)
-            bestAsk = IOrderStorage(orderStorage).getNextPrice(
-                buyOrder.eventId,
-                buyOrder.outcomeIndex,
-                false, // isBuy = false
-                bestAsk
-            );
+            bestAsk = IOrderStorage(orderStorage)
+                .getNextPrice(
+                    buyOrder.eventId,
+                    buyOrder.outcomeIndex,
+                    false, // isBuy = false
+                    bestAsk
+                );
         }
     }
 
@@ -420,21 +428,23 @@ contract OrderBookManager is
         require(orderStorage != address(0), "OrderStorage not set");
 
         // Get best bid price (highest buy price) - O(log n)
-        uint128 bestBid = IOrderStorage(orderStorage).getBestPrice(
-            sellOrder.eventId,
-            sellOrder.outcomeIndex,
-            true // isBuy = true for buy orders
-        );
+        uint128 bestBid = IOrderStorage(orderStorage)
+            .getBestPrice(
+                sellOrder.eventId,
+                sellOrder.outcomeIndex,
+                true // isBuy = true for buy orders
+            );
 
         // Iterate through price levels while match is possible
         while (bestBid != 0 && bestBid >= uint128(sellOrder.price) && sellOrder.remainingAmount > 0) {
             // Get first order at this price (O(1))
-            OrderKey buyKey = IOrderStorage(orderStorage).peekOrder(
-                sellOrder.eventId,
-                sellOrder.outcomeIndex,
-                true, // isBuy = true
-                bestBid
-            );
+            OrderKey buyKey = IOrderStorage(orderStorage)
+                .peekOrder(
+                    sellOrder.eventId,
+                    sellOrder.outcomeIndex,
+                    true, // isBuy = true
+                    bestBid
+                );
 
             // Iterate through orders at this price level (linked list)
             while (OrderStruct.isNotSentinel(buyKey) && sellOrder.remainingAmount > 0) {
@@ -443,9 +453,8 @@ contract OrderBookManager is
 
                 // Skip invalid orders
                 if (
-                    buyOrder.status != OrderStruct.OrderStatus.Cancelled &&
-                    buyOrder.status != OrderStruct.OrderStatus.Filled &&
-                    buyOrder.remainingAmount > 0
+                    buyOrder.status != OrderStruct.OrderStatus.Cancelled
+                        && buyOrder.status != OrderStruct.OrderStatus.Filled && buyOrder.remainingAmount > 0
                 ) {
                     // Validate event and outcome match
                     if (buyOrder.eventId != sellOrder.eventId) {
@@ -465,12 +474,13 @@ contract OrderBookManager is
             }
 
             // Get next price level (next lower buy price) - O(log n)
-            bestBid = IOrderStorage(orderStorage).getNextPrice(
-                sellOrder.eventId,
-                sellOrder.outcomeIndex,
-                true, // isBuy = true
-                bestBid
-            );
+            bestBid = IOrderStorage(orderStorage)
+                .getNextPrice(
+                    sellOrder.eventId,
+                    sellOrder.outcomeIndex,
+                    true, // isBuy = true
+                    bestBid
+                );
         }
     }
 
@@ -478,9 +488,8 @@ contract OrderBookManager is
         OrderStruct.Order storage buyOrder = orders[buyOrderId];
         OrderStruct.Order storage sellOrder = orders[sellOrderId];
 
-        uint128 matchAmount = buyOrder.remainingAmount < sellOrder.remainingAmount
-            ? buyOrder.remainingAmount
-            : sellOrder.remainingAmount;
+        uint128 matchAmount =
+            buyOrder.remainingAmount < sellOrder.remainingAmount ? buyOrder.remainingAmount : sellOrder.remainingAmount;
 
         // Correct match price: Taker accepts Maker's price
         // If buyer is Taker (new buy order): use sell order price (maker's price)
@@ -505,11 +514,11 @@ contract OrderBookManager is
             makerFee = IFeeVaultManager(feeVaultManager).calculateMakerTakerFee(matchUsd, true);
         }
 
-        // ✅ 持仓管理: 记录买家持仓增加
+        // 持仓管理: 记录买家持仓增加
         positions[buyOrder.eventId][buyOrder.outcomeIndex][buyOrder.maker] += matchAmount;
         _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeIndex, buyOrder.maker);
 
-        // ✅ 持仓管理: 卖家持仓减少(卖出做空)
+        // 持仓管理: 卖家持仓减少(卖出做空)
         if (positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.maker] >= matchAmount) {
             positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.maker] -= matchAmount;
         } else {
@@ -517,43 +526,34 @@ contract OrderBookManager is
         }
 
         // 集成 FundingManager: 资金结算 (虚拟 Long Token 模型)
-        IFundingManager(fundingManager).settleMatchedOrder(
-            buyOrderId, // 买单 ID
-            sellOrderId, // 卖单 ID
-            buyOrder.maker, // 买家地址
-            sellOrder.maker, // 卖家地址
-            matchAmount, // 成交数量
-            matchPrice, // 成交价格
-            buyOrder.eventId, // 事件 ID
-            buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
-        );
+        IFundingManager(fundingManager)
+            .settleMatchedOrder(
+                buyOrderId, // 买单 ID
+                sellOrderId, // 卖单 ID
+                buyOrder.maker, // 买家地址
+                sellOrder.maker, // 卖家地址
+                matchAmount, // 成交数量
+                matchPrice, // 成交价格
+                buyOrder.eventId, // 事件 ID
+                buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
+            );
 
-        // ✅ 收取 Maker-Taker 手续费
+        // 收取 Maker-Taker 手续费
         if (feeVaultManager != address(0)) {
             // Collect taker fee
             if (takerFee > 0) {
                 address taker = buyerIsTaker ? buyOrder.maker : sellOrder.maker;
                 address takerToken = buyerIsTaker ? buyOrder.tokenAddress : sellOrder.tokenAddress;
-                IFeeVaultManager(feeVaultManager).collectFee(
-                    takerToken,
-                    taker,
-                    takerFee,
-                    buyOrder.eventId,
-                    "taker_execution"
-                );
+                IFeeVaultManager(feeVaultManager)
+                    .collectFee(takerToken, taker, takerFee, buyOrder.eventId, "taker_execution");
             }
 
             // Collect maker fee
             if (makerFee > 0) {
                 address maker = buyerIsTaker ? sellOrder.maker : buyOrder.maker;
                 address makerToken = buyerIsTaker ? sellOrder.tokenAddress : buyOrder.tokenAddress;
-                IFeeVaultManager(feeVaultManager).collectFee(
-                    makerToken,
-                    maker,
-                    makerFee,
-                    buyOrder.eventId,
-                    "maker_execution"
-                );
+                IFeeVaultManager(feeVaultManager)
+                    .collectFee(makerToken, maker, makerFee, buyOrder.eventId, "maker_execution");
             }
         }
 
@@ -565,13 +565,14 @@ contract OrderBookManager is
             // When buy order matches at better price (matchPrice < orderPrice),
             // surplus USD remains locked. This call returns it to user's balance.
             // Example: Order at 8000, match at 7000 → 10 USD surplus returned
-            IFundingManager(fundingManager).unlockForOrder(
-                buyOrder.maker,
-                buyOrderId,
-                true, // isBuyOrder
-                buyOrder.eventId,
-                buyOrder.outcomeIndex
-            );
+            IFundingManager(fundingManager)
+                .unlockForOrder(
+                    buyOrder.maker,
+                    buyOrderId,
+                    true, // isBuyOrder
+                    buyOrder.eventId,
+                    buyOrder.outcomeIndex
+                );
         } else if (buyOrder.filledAmount > 0) {
             buyOrder.status = OrderStruct.OrderStatus.Partial;
         }
@@ -584,13 +585,14 @@ contract OrderBookManager is
             // Sell orders lock Long Tokens (fixed amount), not USD value.
             // No surplus occurs (always consumes exact locked amount), but we call
             // unlockForOrder() for code consistency and to handle edge cases.
-            IFundingManager(fundingManager).unlockForOrder(
-                sellOrder.maker,
-                sellOrderId,
-                false, // isBuyOrder
-                sellOrder.eventId,
-                sellOrder.outcomeIndex
-            );
+            IFundingManager(fundingManager)
+                .unlockForOrder(
+                    sellOrder.maker,
+                    sellOrderId,
+                    false, // isBuyOrder
+                    sellOrder.eventId,
+                    sellOrder.outcomeIndex
+                );
         } else if (sellOrder.filledAmount > 0) {
             sellOrder.status = OrderStruct.OrderStatus.Partial;
         }
@@ -609,31 +611,21 @@ contract OrderBookManager is
         orderKeyToId[key] = orderId;
 
         // Convert to DBOrder for storage
-        OrderStruct.DBOrder memory dbOrder = OrderStruct.DBOrder({
-            order: order,
-            next: OrderStruct.ORDERKEY_SENTINEL
-        });
+        OrderStruct.DBOrder memory dbOrder = OrderStruct.DBOrder({order: order, next: OrderStruct.ORDERKEY_SENTINEL});
 
         // Store order in OrderStorage (Layer 3)
         require(orderStorage != address(0), "OrderStorage not set");
         IOrderStorage(orderStorage).storeOrder(key, dbOrder);
 
         // Insert price level if new (Layer 1) - O(log n)
-        IOrderStorage(orderStorage).insertPrice(
-            order.eventId,
-            order.outcomeIndex,
-            order.side == OrderStruct.Side.Buy,
-            uint128(order.price)
-        );
+        IOrderStorage(orderStorage)
+            .insertPrice(order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price));
 
         // Enqueue order at price level (Layer 2) - O(1)
-        IOrderStorage(orderStorage).enqueueOrder(
-            order.eventId,
-            order.outcomeIndex,
-            order.side == OrderStruct.Side.Buy,
-            uint128(order.price),
-            key
-        );
+        IOrderStorage(orderStorage)
+            .enqueueOrder(
+                order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price), key
+            );
     }
 
     /**
@@ -647,21 +639,15 @@ contract OrderBookManager is
         require(orderStorage != address(0), "OrderStorage not set");
 
         // Check if queue is empty at this price level
-        bool isEmpty = IOrderStorage(orderStorage).isQueueEmpty(
-            order.eventId,
-            order.outcomeIndex,
-            order.side == OrderStruct.Side.Buy,
-            uint128(order.price)
-        );
+        bool isEmpty = IOrderStorage(orderStorage)
+            .isQueueEmpty(order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price));
 
         // If queue is empty, remove price level from tree (O(log n))
         if (isEmpty) {
-            IOrderStorage(orderStorage).removePrice(
-                order.eventId,
-                order.outcomeIndex,
-                order.side == OrderStruct.Side.Buy,
-                uint128(order.price)
-            );
+            IOrderStorage(orderStorage)
+                .removePrice(
+                    order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price)
+                );
         }
     }
 
@@ -779,8 +765,8 @@ contract OrderBookManager is
             OrderStruct.Order storage order = orders[orderIds[i]];
             // 如果存在任何未完成的订单，返回 false
             if (
-                (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial) &&
-                order.remainingAmount > 0
+                (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
+                    && order.remainingAmount > 0
             ) {
                 return false;
             }
@@ -805,19 +791,21 @@ contract OrderBookManager is
             uint256 price = marketOrderBook.buyPriceLevels[i];
             uint256[] storage ids = marketOrderBook.buyOrdersByPrice[price];
             for (uint256 j = 0; j < ids.length; j++) {
-                    OrderStruct.Order storage order = orders[ids[j]];
-                if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial) {
+                OrderStruct.Order storage order = orders[ids[j]];
+                if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
+                {
                     order.status = OrderStruct.OrderStatus.Cancelled;
 
                     // 集成 FundingManager: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager).unlockForOrder(
-                            order.maker,
-                            ids[j], // orderId
-                            order.side == OrderStruct.Side.Buy, // 是否为买单
-                            order.eventId,
-                            order.outcomeIndex
-                        );
+                        IFundingManager(fundingManager)
+                            .unlockForOrder(
+                                order.maker,
+                                ids[j], // orderId
+                                order.side == OrderStruct.Side.Buy, // 是否为买单
+                                order.eventId,
+                                order.outcomeIndex
+                            );
                     }
                 }
             }
@@ -827,26 +815,28 @@ contract OrderBookManager is
             uint256 price = marketOrderBook.sellPriceLevels[i];
             uint256[] storage ids = marketOrderBook.sellOrdersByPrice[price];
             for (uint256 j = 0; j < ids.length; j++) {
-                    OrderStruct.Order storage order = orders[ids[j]];
-                if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial) {
+                OrderStruct.Order storage order = orders[ids[j]];
+                if (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
+                {
                     order.status = OrderStruct.OrderStatus.Cancelled;
 
                     // 集成 FundingManager: 批量撤单解锁资金或 Long Token
                     if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager).unlockForOrder(
-                            order.maker,
-                            ids[j], // orderId
-                            order.side == OrderStruct.Side.Buy, // 是否为买单
-                            order.eventId,
-                            order.outcomeIndex
-                        );
+                        IFundingManager(fundingManager)
+                            .unlockForOrder(
+                                order.maker,
+                                ids[j], // orderId
+                                order.side == OrderStruct.Side.Buy, // 是否为买单
+                                order.eventId,
+                                order.outcomeIndex
+                            );
                     }
                 }
             }
         }
     }
 
-    // ✅ 结算持仓 - 集成 FundingManager 标记事件已结算
+    // 结算持仓 - 集成 FundingManager 标记事件已结算
     function _settlePositions(uint256 eventId, uint8 winningOutcomeIndex) internal {
         IFundingManager(fundingManager).markEventSettled(eventId, winningOutcomeIndex);
     }
