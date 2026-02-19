@@ -9,12 +9,17 @@
 ├── EventManager（单一实例，管理所有事件）- UUPS 可升级
 │   └── 事件创建者白名单（经授权的地址可创建事件）
 ├── OrderBookManager（单一实例，管理所有订单）- UUPS 可升级
+│   ├── OrderStorage（三层存储架构）
+│   │   ├── Layer 1: Price Trees (RedBlackTree) - O(log n)
+│   │   ├── Layer 2: Order Queues (Linked List) - O(1) FIFO
+│   │   └── Layer 3: Global Orders (Mapping) - O(1) lookup
+│   └── OrderValidator（参数验证 + EIP712 签名支持）
 ├── FundingManager（单一实例，管理所有资金）- UUPS 可升级
-├── FeeVaultManager（单一实例，费用直接给 owner）- UUPS 可升级
+├── FeeVaultManager（单一实例，费用直接给 owner，Maker-Taker 费用）- UUPS 可升级
 └── OracleAdapter（事件结算，Simple/Mock/Third-party）
 ```
 
-**存储架构：** 所有 Manager 合约使用集成存储模式，带有 `__gap` 数组以支持 UUPS 升级。
+**存储架构：** 所有 Manager 合约使用集成存储模式，带有 `__gap` 数组以支持 UUPS 升级。OrderBookManager 使用独立的 OrderStorage 合约实现三层存储架构。
 
 **升级机制：** 所有 Manager 合约通过 UUPS（ERC1967Proxy + UUPSUpgradeable）模式支持升级，仅 owner 可授权升级。
 
@@ -300,7 +305,14 @@ fundingManager.mintCompleteSet(eventId, 100 ether);
 用户 → OrderBookManager.placeOrder(eventId, outcomeIndex, Buy, price, amount)
 ├─ 验证事件状态为 Active
 ├─ 验证结果选项存在：supportedOutcomes[eventId][outcomeIndex]
-├─ 验证价格范围：1 <= price <= 10000 (基点)
+├─ 【OrderValidator 验证】
+│   ├─ 使用 OrderValidator.validateOrderParams() 统一验证
+│   ├─ 验证 maker 地址非零
+│   ├─ 验证 eventId 和 outcomeIndex（通过 _getEventOutcomeCount()）
+│   ├─ 验证价格范围：1 <= price <= 10000 (基点)
+│   ├─ 验证价格对齐：price % TICK_SIZE == 0 (TICK_SIZE = 10)
+│   ├─ 验证数量：amount > 0
+│   └─ 验证过期时间（如果非零）
 │
 ├─ 【子步骤 1】锁定资金
 │   ├─ 计算所需 USD：requiredUsd = (amount × price) / 10000
@@ -310,24 +322,24 @@ fundingManager.mintCompleteSet(eventId, 100 ether);
 │   │   └─ 增加锁定余额：orderLockedUsd[user][orderId] = requiredUsd
 │   └─ 触发事件：FundsLocked(user, orderId, requiredUsd)
 │
-├─ 【子步骤 2】收取下单费用（Placement Fee）
-│   ├─ FeeVaultManager.collectPlacementFee(user, amount, eventId)
-│   │   ├─ 计算费用（USD）：feeUsd = amount × 10 / 10000  (0.1% = 10 基点)
-│   │   ├─ 从用户余额扣除：userUsdBalances[user] -= feeUsd
-│   │   ├─ 增加协议费用：protocolUsdFeeBalance += feeUsd
-│   │   ├─ 更新统计：
-│   │   │   ├─ totalFeesCollected += feeUsd
-│   │   │   ├─ eventFees[eventId] += feeUsd
-│   │   │   └─ userPaidFees[user] += feeUsd
-│   │   └─ 触发事件：PlacementFeeCollected(user, feeUsd, eventId)
-│   └─ 实际费用：amount 100 → fee = 100 × 0.001 = 0.1 USD
+├─ 【子步骤 2】收取下单费用（Maker-Taker 费用）
+│   ├─ Maker 下单费用：0%（免费挂单，激励流动性提供）
+│   ├─ Taker 下单费用：0%（免费）
+│   └─ 注：费用在成交时收取（Maker: 0.05%, Taker: 0.25%）
 │
-├─ 【子步骤 3】订单撮合（自动）
+├─ 【子步骤 3】订单撮合（自动，使用三层存储架构）
 │   ├─ 查找匹配卖单：从最低卖价开始遍历
+│   │   ├─ Layer 1: 使用 OrderStorage.getBestPrice() 获取最优卖价 - O(log n)
 │   │   └─ 遍历价格：lowestSellPrice → price (买单价格)
 │   │
 │   ├─ 对每个匹配的卖单执行成交：
+│   │   ├─ Layer 2: 使用 OrderStorage.peekOrder() 获取队列头部 - O(1)
+│   │   ├─ Layer 3: 通过 orderKeyToId[sellKey] 获取 orderId - O(1)
 │   │   ├─ 计算成交量：matchAmount = min(buyOrder.remaining, sellOrder.remaining)
+│   │   │
+│   │   ├─ 计算成交价格（Taker 接受 Maker 的价格）：
+│   │   │   ├─ 买家是 Taker：matchPrice = sellOrder.price（买家接受卖家挂单价）
+│   │   │   └─ 卖家是 Taker：matchPrice = buyOrder.price（卖家接受买家出价）
 │   │   │
 │   │   ├─ 更新订单状态：
 │   │   │   ├─ buyOrder.filledAmount += matchAmount
@@ -340,7 +352,7 @@ fundingManager.mintCompleteSet(eventId, 100 ether);
 │   │   │   └─ positions[eventId][outcomeIndex][seller] -= matchAmount
 │   │   │
 │   │   ├─ 结算资金：FundingManager.settleMatchedOrder()
-│   │   │   ├─ 计算 USD 金额：usdAmount = (matchAmount × sellPrice) / 10000
+│   │   │   ├─ 计算 USD 金额：usdAmount = (matchAmount × matchPrice) / 10000
 │   │   │   ├─ 买方：
 │   │   │   │   ├─ 解锁 USD：orderLockedUsd[buyer][buyOrderId] -= usdAmount
 │   │   │   │   └─ 增加 Long Token：longPositions[buyer][eventId][outcome] += matchAmount
@@ -349,22 +361,37 @@ fundingManager.mintCompleteSet(eventId, 100 ether);
 │   │   │   │   └─ 增加 USD：userUsdBalances[seller] += usdAmount
 │   │   │   └─ 触发事件：OrderSettled(buyOrderId, sellOrderId, matchAmount, usdAmount)
 │   │   │
-│   │   ├─ 收取成交费用（Execution Fee，买卖各 50%）：
-│   │   │   ├─ buyerFeeUsd = matchAmount × 10 / 10000  (0.1% = 10 基点)
-│   │   │   ├─ sellerFeeUsd = matchAmount × 10 / 10000 (0.1% = 10 基点)
-│   │   │   ├─ 总成交费用：0.2% (20 基点)，split 50/50
-│   │   │   ├─ FeeVaultManager.collectExecutionFee(buyer, buyerFeeUsd, ...)
-│   │   │   └─ FeeVaultManager.collectExecutionFee(seller, sellerFeeUsd, ...)
+│   │   ├─ 收取 Maker-Taker 成交费用：
+│   │   │   ├─ Taker 费用：0.25%（25 基点）
+│   │   │   │   └─ takerFee = (matchUsd * 25 + 9999) / 10000  // 向上取整
+│   │   │   ├─ Maker 费用：0.05%（5 基点）
+│   │   │   │   └─ makerFee = (matchUsd * 5 + 9999) / 10000   // 向上取整
+│   │   │   ├─ 确定角色：
+│   │   │   │   ├─ taker = buyerIsTaker ? buyOrder.maker : sellOrder.maker
+│   │   │   │   └─ maker = buyerIsTaker ? sellOrder.maker : buyOrder.maker
+│   │   │   ├─ FeeVaultManager.collectFee(takerToken, taker, takerFee, eventId, "taker_execution")
+│   │   │   └─ FeeVaultManager.collectFee(makerToken, maker, makerFee, eventId, "maker_execution")
 │   │   │
-│   │   └─ 触发事件：OrderMatched(buyOrderId, sellOrderId, matchAmount, sellPrice)
+│   │   ├─ 🔧 Issue #11 修复：买单完全成交时返还剩余 USD
+│   │   │   └─ if (buyOrder.remainingAmount == 0):
+│   │   │       └─ FundingManager.unlockForOrder(buyer, buyOrderId, true, eventId, outcomeIndex)
+│   │   │           └─ 返还剩余 USD：surplus = orderLockedUsd - actualUsed
+│   │   │
+│   │   └─ 触发事件：OrderMatched(buyOrderId, sellOrderId, matchAmount, matchPrice)
+│   │
+│   ├─ 获取下一个价格层级：
+│   │   └─ Layer 1: OrderStorage.getNextPrice() - O(log n)
 │   │
 │   └─ 循环直到：buyOrder.remaining == 0 或无更多匹配卖单
 │
-├─ 【子步骤 4】入簿（如有剩余）
+├─ 【子步骤 4】入簿（如有剩余，使用三层存储）
 │   ├─ if (buyOrder.remainingAmount > 0):
 │   │   ├─ 订单状态 = Partial (部分成交) 或 Pending (未成交)
-│   │   ├─ 添加到订单簿：buyOrders[price].push(orderId)
-│   │   └─ 订单按 FIFO 顺序排列
+│   │   ├─ 生成 OrderKey：key = OrderStruct.hash(order)
+│   │   ├─ Layer 3: OrderStorage.storeOrder(key, dbOrder) - O(1)
+│   │   ├─ Layer 1: OrderStorage.insertPrice(eventId, outcomeIndex, isBuy, price) - O(log n)
+│   │   ├─ Layer 2: OrderStorage.enqueueOrder(eventId, outcomeIndex, isBuy, price, key) - O(1)
+│   │   └─ 订单按 FIFO 顺序排列（价格-时间优先）
 │   └─ else:
 │       ├─ 订单状态 = Filled (完全成交)
 │       └─ 从订单簿移除
@@ -385,15 +412,18 @@ orderBookManager.placeOrder(
 );
 ```
 
-**资金变化（统一 USD 余额）：**
+**资金变化（统一 USD 余额，Maker-Taker 费用）：**
 
 - 锁定金额：`(100 × 6000) / 10000 = 60 USD`
-- 下单费用（Placement）：`100 × 10 / 10000 = 0.1 USD`
-- 用户可用余额减少：`60 + 0.1 = 60.1 USD`
-- 如果匹配成交：
-  - 买方获得 Long Token
-  - 卖方获得 USD
-  - 双方各支付 0.1% 成交费用（Execution Fee）
+- 下单费用（Placement）：`0%`（Maker 和 Taker 均免费）
+- 如果立即成交（Taker）：
+  - 成交费用：`matchUsd × 0.25% = 0.25% Taker 费用`
+  - 对手方（Maker）费用：`matchUsd × 0.05% = 0.05% Maker 费用`
+- 如果挂单（Maker）：
+  - 下单费用：`0%`（免费）
+  - 成交时费用：`matchUsd × 0.05% = 0.05% Maker 费用`
+- **Issue #11 修复**：如果以更优价格成交（如 5500），剩余 USD 自动返还
+  - 示例：订单价 6000，成交价 5500 → 返还 `(100 × 500) / 10000 = 5 USD`
 
 ---
 
@@ -903,20 +933,23 @@ userPaidFees[user] = amount                       // 用户支付费用 (USD)
 
 ## 费用说明
 
-### 费用类型与费率
+### 费用类型与费率（Maker-Taker 模型）
 
-1. **下单费用（Placement Fee）**：下单时从用户 USD 余额扣除
-    - 费率：10 基点 (0.1%)
-    - 计算：`feeUsd = orderAmount × 10 / 10000`
-    - 时机：订单提交时立即收取
+**Maker（流动性提供者）**：挂单在订单簿中的订单
+- 下单费用（Placement Fee）：0%（免费挂单，激励流动性提供）
+- 成交费用（Execution Fee）：0.05%（5 基点）
 
-2. **成交费用（Execution Fee）**：订单撮合时从买卖双方收取
-    - 买方：10 基点 (0.1%)
-    - 卖方：10 基点 (0.1%)
-    - 总计：20 基点 (0.2%)
-    - 时机：订单匹配成交时收取
+**Taker（流动性消耗者）**：立即成交的订单
+- 下单费用（Placement Fee）：0%（免费）
+- 成交费用（Execution Fee）：0.25%（25 基点）
 
-**总费用：** 最多 0.3% (Placement 0.1% + Execution 0.2%)
+**总最大费用：** 0.3%（单边，Maker: 0.05%, Taker: 0.25%）
+
+**费用计算精度**：使用向上取整（ceiling division）避免费用不足
+```solidity
+// FeeVaultManager.sol
+fee = (amount * rate + FEE_PRECISION - 1) / FEE_PRECISION;
+```
 
 ### 费用存储与流转
 
@@ -998,18 +1031,23 @@ forge script script/UpgradeManagers.s.sol --broadcast
 
 ### 关键变化
 
-- ❌ **移除**：PodFactory, PodDeployer, 4 个 Managers, AdminFeeVault, 独立 Storage 合约
+- ❌ **移除**：PodFactory, PodDeployer, 4 个 Managers, AdminFeeVault
 - ✅ **保留**：EventManager, OrderBookManager, FundingManager, FeeVaultManager（单实例，带 UUPS）
 - 🆕 **新增**：
   - 事件创建者白名单机制
   - 统一 USD 余额系统（`normalizeToUsd` / `denormalizeFromUsd`）
-  - 分离费用类型（Placement / Execution）
+  - **OrderStorage 三层存储架构**（Price Trees + Order Queues + Global Orders）
+  - **OrderValidator**（参数验证 + EIP712 签名支持）
+  - **Maker-Taker 费用差异化**（Maker: 0.05%, Taker: 0.25%）
   - 两步结算流程（`markEventSettled` + `redeemWinnings`）
   - UUPS 升级机制
 - 📉 **简化**：
   - 费用直接提取，无自动转移逻辑
   - 1:1 奖金兑换（1 Winning Long Token = 1 USD）
-  - 集成存储（无独立 Storage 合约）
+- ⚡ **性能优化**：
+  - O(log n) 价格层级操作（84% gas 节省）
+  - O(1) FIFO 订单队列
+  - 价格-时间优先原则
 
 ### 核心公式
 
@@ -1018,12 +1056,13 @@ forge script script/UpgradeManagers.s.sol --broadcast
 1 Winning Long Token = 1 USD (直接兑换)
 ```
 
-**费用计算：**
+**费用计算（Maker-Taker 模型）：**
 ```
-Placement Fee = orderAmount × 0.001 (0.1%)
-Execution Fee (买方) = matchAmount × 0.001 (0.1%)
-Execution Fee (卖方) = matchAmount × 0.001 (0.1%)
-总最大费用 = 0.3% (Placement + Execution)
+Maker 下单费用 = 0% (免费)
+Maker 成交费用 = matchUsd × 0.05% (5 基点)
+Taker 下单费用 = 0% (免费)
+Taker 成交费用 = matchUsd × 0.25% (25 基点)
+总最大费用 = 0.3% (单边)
 ```
 
 **余额转换：**
