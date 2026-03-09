@@ -72,16 +72,27 @@ WORKSPACE_DIR="/workspace"
 
 echo "📍 Workspace: $WORKSPACE_DIR"
 
-# Copy CLAUDE.md from mounted file (skip if already exists - migration case)
-if [ -f "/tmp/claude-workflow.md" ]; then
-    if [ -f "$WORKSPACE_DIR/CLAUDE.md" ]; then
-        echo "📄 CLAUDE.md already exists - skipping (migration case)"
-    else
-        echo "📄 Copying CLAUDE.md..."
-        cp /tmp/claude-workflow.md "$WORKSPACE_DIR/CLAUDE.md"
-        echo "✅ CLAUDE.md copied to project root"
+# Copy Claude Code configuration from embedded files to user's global config
+if [ -d "/tmp/claude-config" ]; then
+    echo "📝 Configuring Claude Code global config..."
+    mkdir -p ~/.claude/rules/{common,golang,typescript,python,solidity}
+
+    # Copy user CLAUDE.md
+    if [ -f "/tmp/claude-config/CLAUDE.md" ]; then
+        cp /tmp/claude-config/CLAUDE.md ~/.claude/CLAUDE.md
+        echo "   ✅ CLAUDE.md copied to ~/.claude/"
     fi
-    fi
+
+    # Copy all rules (all languages available in all containers)
+    for lang in common golang typescript python solidity; do
+        if [ -d "/tmp/claude-config/rules/$lang" ]; then
+            cp /tmp/claude-config/rules/$lang/*.md ~/.claude/rules/$lang/
+            echo "   ✅ $lang rules copied"
+        fi
+    done
+else
+    echo "   ⚠️  Claude config not found at /tmp/claude-config (skipping)"
+fi
 
 # Git configuration
 if [ -n "${GIT_AUTHOR_NAME}" ] && [ -n "${GIT_AUTHOR_EMAIL}" ]; then
@@ -132,13 +143,13 @@ if command -v node &> /dev/null; then
         if [ ! -f "$WORKSPACE_DIR/package.json" ]; then
             cat > "$WORKSPACE_DIR/package.json" <<'EOF'
 {
-  "packageManager": "yarn@1.22.22"
+  "packageManager": "yarn@4.12.0"
 }
 EOF
         fi
 
         # Pre-download Yarn to cache it (avoids download prompts)
-        corepack prepare yarn@1.22.22 --activate &>/dev/null
+        corepack prepare yarn@4.12.0 --activate &>/dev/null
 
         # Configure Yarn to use node-modules instead of PnP
         cat > "$WORKSPACE_DIR/.yarnrc.yml" <<EOF
@@ -227,6 +238,26 @@ if [ -n "${ANTHROPIC_AUTH_TOKEN}" ] && [ -n "${ANTHROPIC_BASE_URL}" ]; then
 }
 EOF
     echo "✅ Claude Code configured"
+fi
+
+# Claude Code plugin marketplace and installation
+echo "🔌 Installing Claude Code plugins..."
+if command -v claude &> /dev/null; then
+    # Add marketplace
+    if claude plugin marketplace add Marcrus813/everything-claude-code-tailored > /tmp/claude-plugin-marketplace.log 2>&1; then
+        echo "   ✅ Plugin marketplace added"
+    else
+        echo "   ⚠️  Plugin marketplace add failed (see /tmp/claude-plugin-marketplace.log)"
+    fi
+
+    # Install plugin
+    if claude plugin install everything-claude-code@everything-claude-code > /tmp/claude-plugin-install.log 2>&1; then
+        echo "   ✅ everything-claude-code plugin installed"
+    else
+        echo "   ⚠️  Plugin install failed (see /tmp/claude-plugin-install.log)"
+    fi
+else
+    echo "   ⚠️  Claude Code not found, skipping plugin installation"
 fi
 
 # Codex installation

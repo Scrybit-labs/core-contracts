@@ -105,4 +105,43 @@ contract Deploy is Script {
         );
         linker.run();
     }
+
+    function getDeployments()
+        external
+        view
+        returns (
+            MockOracleAdapterDeploy,
+            EventManagerDeploy,
+            FeeVaultManagerDeploy,
+            FundingManagerDeploy,
+            OrderBookManagerDeploy
+        )
+    {
+        return (
+            mockOracleAdapterDeploy,
+            eventManagerDeploy,
+            feeVaultManagerDeploy,
+            fundingManagerDeploy,
+            orderBookManagerDeploy
+        );
+    }
+
+    /**
+     * @dev Returns the addresses of proxies
+     */
+    function getContractSet() external view returns (address, address, address, address, address) {
+        (, address _mockOracleAdapter) = mockOracleAdapterDeploy.getImplementationAndProxy();
+        (, address _eventManager) = eventManagerDeploy.getImplementationAndProxy();
+        (, address _feeVaultManager) = feeVaultManagerDeploy.getImplementationAndProxy();
+        (, address _fundingManager) = fundingManagerDeploy.getImplementationAndProxy();
+        (, address _orderBookManager) = orderBookManagerDeploy.getImplementationAndProxy();
+
+        require(_mockOracleAdapter != address(0), "Deploy: Not deployed yet");
+        require(_eventManager != address(0), "Deploy: Not deployed yet");
+        require(_feeVaultManager != address(0), "Deploy: Not deployed yet");
+        require(_fundingManager != address(0), "Deploy: Not deployed yet");
+        require(_orderBookManager != address(0), "Deploy: Not deployed yet");
+
+        return (_mockOracleAdapter, _eventManager, _feeVaultManager, _fundingManager, _orderBookManager);
+    }
 }

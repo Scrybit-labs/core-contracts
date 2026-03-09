@@ -41,6 +41,20 @@
 - 锁定资金与撮合结算
 - 结算标记与赎回
 
+#### Deposit Limits
+
+The platform enforces two deposit limits for user safety:
+
+1. **Minimum Deposit Per Transaction** (default: 1 USD / 1e18)
+   - Prevents dust deposits that waste gas
+   - Configurable via `setMinDepositPerTxnUsd(uint256 newMin)`
+
+2. **Minimum Wallet Balance** (default: 5 USD / 5e18)
+   - Ensures users maintain sufficient balance for gas fees
+   - Prevents users from depositing their entire wallet balance
+   - Users must keep at least 5 USD worth of tokens in their wallet after deposit
+   - Configurable via `setMinTokenBalanceUsd(uint256 newMin)`
+
 ### 3.4 FeeVaultManager
 - 统一USD手续费追踪
 - 下单手续费（0.1%）+ 撮合手续费（0.2%）

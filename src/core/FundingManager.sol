@@ -155,7 +155,7 @@ contract FundingManager is
     mapping(address => uint256) public totalWithdrawn;
 
     // ===== Upgradeable storage gap =====
-    uint256[49] private _gap;
+    uint256[50] private _gap;
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
