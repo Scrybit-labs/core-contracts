@@ -10,6 +10,9 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/core/IOrderBookManager.sol";
 import "../interfaces/core/IFundingManager.sol";
 import "../interfaces/core/IFeeVaultManager.sol";
+import "../interfaces/core/IOrderStorage.sol";
+import {OrderStruct, OrderKey} from "../library/OrderStruct.sol";
+import {OrderValidator} from "./OrderValidator.sol";
 
 /**
  * @title OrderBookManager
@@ -22,6 +25,7 @@ contract OrderBookManager is
     PausableUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuard,
+    OrderValidator,
     IOrderBookManager
 {
     // ============ Modifiers ============
@@ -43,6 +47,9 @@ contract OrderBookManager is
     /// @notice FeeVaultManager 合约地址
     address public feeVaultManager;
 
+    /// @notice OrderStorage 合约地址
+    address public orderStorage;
+
     // ============ 事件与结果管理 Event & Outcome Management ============
 
     /// @notice 事件结果数量: eventId => outcomeCount (0 means not registered)
@@ -54,28 +61,16 @@ contract OrderBookManager is
     uint256 public nextOrderId;
 
     /// @notice 订单映射: orderId => Order
-    mapping(uint256 => Order) public orders;
+    mapping(uint256 => OrderStruct.Order) public orders;
+
+    /// @notice OrderKey to orderId mapping for new storage layer
+    mapping(OrderKey => uint256) public orderKeyToId;
 
     /// @notice 用户订单列表: user => orderIds[]
     mapping(address => uint256[]) public userOrders;
 
-    // ============ 订单簿结构 Order Book Structure ============
-
-    /// @notice 结果订单簿(买单和卖单按价格分组)
-    struct OutcomeOrderBook {
-        mapping(uint256 => uint256[]) buyOrdersByPrice; // price => orderIds[]
-        uint256[] buyPriceLevels; // 买单价格档位(降序)
-        mapping(uint256 => uint256[]) sellOrdersByPrice; // price => orderIds[]
-        uint256[] sellPriceLevels; // 卖单价格档位(升序)
-    }
-
-    /// @notice 事件订单簿(每个结果一个订单簿)
-    struct EventOrderBook {
-        mapping(uint8 => OutcomeOrderBook) outcomeOrderBooks;
-    }
-
-    /// @notice 事件订单簿映射: eventId => EventOrderBook
-    mapping(uint256 => EventOrderBook) internal eventOrderBooks;
+    /// @notice 事件订单列表: eventId => orderIds[] (for efficient cancellation during settlement)
+    mapping(uint256 => uint256[]) internal eventOrderIds;
 
     // ============ 持仓管理 Position Management ============
 
@@ -88,14 +83,6 @@ contract OrderBookManager is
 
     /// @notice 用户是否已记录为持仓者: eventId => outcomeIndex => user => isRecorded
     mapping(uint256 => mapping(uint8 => mapping(address => bool))) internal isPositionHolder;
-
-    // ============ 常量 Constants ============
-
-    /// @notice 价格精度(最小变动单位)
-    uint256 public constant TICK_SIZE = 10;
-
-    /// @notice 最大价格(基点)
-    uint256 public constant MAX_PRICE = 10000;
 
     // ============ 事件结算 Event Settlement ============
 
@@ -127,6 +114,7 @@ contract OrderBookManager is
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         __Pausable_init();
+        __EIP712_init("OrderBookManager", "1");
         nextOrderId = 1; // Start from 1
     }
 
@@ -145,7 +133,7 @@ contract OrderBookManager is
     function placeOrder(
         uint256 eventId,
         uint8 outcomeIndex,
-        OrderSide side,
+        OrderStruct.Side side,
         uint256 price,
         uint256 amount,
         address tokenAddress
@@ -158,9 +146,17 @@ contract OrderBookManager is
             revert OutcomeNotSupported(eventId, outcomeIndex);
         }
         if (eventSettled[eventId]) revert EventAlreadySettled(eventId);
-        if (price == 0 || price > MAX_PRICE) revert InvalidPrice(price);
-        if (price % TICK_SIZE != 0) revert PriceNotAlignedWithTickSize(price);
-        if (amount == 0) revert InvalidAmount(amount);
+
+        // Use OrderValidator for comprehensive validation
+        (bool valid, string memory reason) = this.validateOrderParams(
+            user,
+            eventId,
+            outcomeIndex,
+            uint128(price),
+            uint128(amount),
+            0 // expiry: 0 means no expiry for now
+        );
+        require(valid, reason);
 
         // 计算下单金额 (USD)
         uint256 tradeUsd = (amount * price) / MAX_PRICE;
@@ -174,48 +170,55 @@ contract OrderBookManager is
         // 集成 FundingManager: 锁定下单所需资金或 Long Token
         // 买单锁定 USD (不含手续费): amount * price / MAX_PRICE
         // 卖单锁定 Long Token: amount
-        uint256 requiredAmount = side == OrderSide.Buy ? tradeUsd : amount;
+        uint256 requiredAmount = side == OrderStruct.Side.Buy ? tradeUsd : amount;
 
-        IFundingManager(fundingManager).lockForOrder(
-            user, // 用户地址
-            nextOrderId, // 订单 ID
-            side == OrderSide.Buy, // 是否为买单
-            requiredAmount, // 锁定数量
-            eventId, // 事件 ID
-            outcomeIndex // 结果索引
-        );
+        IFundingManager(fundingManager)
+            .lockForOrder(
+                user, // 用户地址
+                nextOrderId, // 订单 ID
+                side == OrderStruct.Side.Buy, // 是否为买单
+                requiredAmount, // 锁定数量
+                eventId, // 事件 ID
+                outcomeIndex // 结果索引
+            );
 
         // 收取手续费
         if (placementFee > 0 && feeVaultManager != address(0)) {
-            IFeeVaultManager(feeVaultManager).collectFee(
-                tokenAddress,
-                user, // 使用传入的真实用户地址
-                placementFee,
-                eventId,
-                "placement"
-            );
+            IFeeVaultManager(feeVaultManager)
+                .collectFee(
+                    tokenAddress,
+                    user, // 使用传入的真实用户地址
+                    placementFee,
+                    eventId,
+                    "placement"
+                );
         }
 
         orderId = nextOrderId++;
-        orders[orderId] = Order({
+        orders[orderId] = OrderStruct.Order({
             orderId: orderId,
-            user: user, // 使用传入的真实用户地址
             eventId: eventId,
+            maker: user, // 使用传入的真实用户地址
             outcomeIndex: outcomeIndex,
             side: side,
-            price: price,
-            amount: amount,
+            price: uint128(price),
+            amount: uint128(amount),
             filledAmount: 0,
-            remainingAmount: amount,
-            status: OrderStatus.Pending,
-            timestamp: block.timestamp,
+            remainingAmount: uint128(amount),
+            status: OrderStruct.OrderStatus.Pending,
+            timestamp: uint64(block.timestamp),
+            expiry: 0,
+            salt: 0,
             tokenAddress: tokenAddress
         });
         userOrders[user].push(orderId);
 
         _matchOrder(orderId);
 
-        if (orders[orderId].status == OrderStatus.Pending || orders[orderId].status == OrderStatus.Partial) {
+        if (
+            orders[orderId].status == OrderStruct.OrderStatus.Pending
+                || orders[orderId].status == OrderStruct.OrderStatus.Partial
+        ) {
             _addToOrderBook(orderId);
         }
 
@@ -231,35 +234,36 @@ contract OrderBookManager is
     }
 
     function cancelOrder(uint256 orderId) external nonReentrant {
-        Order storage order = orders[orderId];
+        OrderStruct.Order storage order = orders[orderId];
 
-        if (_msgSender() != order.user) {
+        if (_msgSender() != order.maker) {
             revert("OrderBookManager: Invalid user");
         }
 
         if (eventSettled[order.eventId]) {
             revert EventAlreadySettled(order.eventId);
         }
-        if (order.status != OrderStatus.Pending && order.status != OrderStatus.Partial) {
+        if (order.status != OrderStruct.OrderStatus.Pending && order.status != OrderStruct.OrderStatus.Partial) {
             revert CannotCancelOrder(orderId);
         }
 
         _removeFromOrderBook(orderId);
 
-        order.status = OrderStatus.Cancelled;
+        order.status = OrderStruct.OrderStatus.Cancelled;
 
         if (order.remainingAmount > 0) {
             // 集成 FundingManager: 解锁剩余未成交资金或 Long Token
-            IFundingManager(fundingManager).unlockForOrder(
-                order.user,
-                orderId,
-                order.side == OrderSide.Buy, // 是否为买单
-                order.eventId,
-                order.outcomeIndex
-            );
+            IFundingManager(fundingManager)
+                .unlockForOrder(
+                    order.maker,
+                    orderId,
+                    order.side == OrderStruct.Side.Buy, // 是否为买单
+                    order.eventId,
+                    order.outcomeIndex
+                );
         }
 
-        emit OrderCancelled(orderId, order.user, order.remainingAmount);
+        emit OrderCancelled(orderId, order.maker, order.remainingAmount);
     }
 
     function settleEvent(uint256 eventId, uint8 winningOutcomeIndex) external onlyEventManager nonReentrant {
@@ -295,188 +299,285 @@ contract OrderBookManager is
     }
 
     function getBestBid(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount) {
-        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeIndex];
-
-        if (outcomeOrderBook.buyPriceLevels.length > 0) {
-            price = outcomeOrderBook.buyPriceLevels[0];
-            amount = _totalAtPrice(outcomeOrderBook.buyOrdersByPrice[price]);
+        if (orderStorage == address(0)) {
+            return (0, 0);
         }
+
+        // Get best bid price (highest buy price) from OrderStorage - O(log n)
+        uint128 bestBid = IOrderStorage(orderStorage).getBestPrice(eventId, outcomeIndex, true);
+
+        if (bestBid == 0) {
+            return (0, 0);
+        }
+
+        price = uint256(bestBid);
+        amount = _totalAtPriceFromStorage(eventId, outcomeIndex, true, bestBid);
     }
 
     function getBestAsk(uint256 eventId, uint8 outcomeIndex) external view returns (uint256 price, uint256 amount) {
-        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[outcomeIndex];
-
-        if (outcomeOrderBook.sellPriceLevels.length > 0) {
-            price = outcomeOrderBook.sellPriceLevels[0];
-            amount = _totalAtPrice(outcomeOrderBook.sellOrdersByPrice[price]);
+        if (orderStorage == address(0)) {
+            return (0, 0);
         }
+
+        // Get best ask price (lowest sell price) from OrderStorage - O(log n)
+        uint128 bestAsk = IOrderStorage(orderStorage).getBestPrice(eventId, outcomeIndex, false);
+
+        if (bestAsk == 0) {
+            return (0, 0);
+        }
+
+        price = uint256(bestAsk);
+        amount = _totalAtPriceFromStorage(eventId, outcomeIndex, false, bestAsk);
     }
 
     // ------------------------------------------------------------
     // Internal: matching 撮合
     // ------------------------------------------------------------
     function _matchOrder(uint256 orderId) internal {
-        Order storage order = orders[orderId];
-        EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
+        OrderStruct.Order storage order = orders[orderId];
 
-        if (order.side == OrderSide.Buy) {
-            _matchBuy(orderId, outcomeOrderBook);
+        if (order.side == OrderStruct.Side.Buy) {
+            _matchBuy(orderId);
         } else {
-            _matchSell(orderId, outcomeOrderBook);
+            _matchSell(orderId);
         }
     }
 
-    function _matchBuy(uint256 buyOrderId, OutcomeOrderBook storage book) internal {
-        Order storage buyOrder = orders[buyOrderId];
+    function _matchBuy(uint256 buyOrderId) internal {
+        OrderStruct.Order storage buyOrder = orders[buyOrderId];
 
-        for (uint256 i = 0; i < book.sellPriceLevels.length && buyOrder.remainingAmount > 0; i++) {
-            uint256 sellPrice = book.sellPriceLevels[i];
-            if (sellPrice > buyOrder.price) break;
+        require(orderStorage != address(0), "OrderStorage not set");
 
-            uint256[] storage sellOrders = book.sellOrdersByPrice[sellPrice];
-            for (uint256 j = 0; j < sellOrders.length && buyOrder.remainingAmount > 0; j++) {
-                uint256 sellOrderId = sellOrders[j];
-                Order storage sellOrder = orders[sellOrderId];
+        // Get best ask price (lowest sell price) - O(log n)
+        uint128 bestAsk = IOrderStorage(orderStorage)
+            .getBestPrice(
+                buyOrder.eventId,
+                buyOrder.outcomeIndex,
+                false // isBuy = false for sell orders
+            );
 
-                // 跳过已完成/已取消的订单，保持数组顺序确保时间优先（FIFO）
+        // Iterate through price levels while match is possible
+        while (bestAsk != 0 && bestAsk <= uint128(buyOrder.price) && buyOrder.remainingAmount > 0) {
+            // Get first order at this price (O(1))
+            OrderKey sellKey = IOrderStorage(orderStorage)
+                .peekOrder(
+                    buyOrder.eventId,
+                    buyOrder.outcomeIndex,
+                    false, // isBuy = false
+                    bestAsk
+                );
+
+            // Iterate through orders at this price level (linked list)
+            while (OrderStruct.isNotSentinel(sellKey) && buyOrder.remainingAmount > 0) {
+                uint256 sellOrderId = orderKeyToId[sellKey];
+                OrderStruct.Order storage sellOrder = orders[sellOrderId];
+
+                // Skip invalid orders
                 if (
-                    sellOrder.status == OrderStatus.Cancelled ||
-                    sellOrder.status == OrderStatus.Filled ||
-                    sellOrder.remainingAmount == 0
+                    sellOrder.status != OrderStruct.OrderStatus.Cancelled
+                        && sellOrder.status != OrderStruct.OrderStatus.Filled && sellOrder.remainingAmount > 0
                 ) {
-                    continue;
+                    // Validate event and outcome match
+                    if (buyOrder.eventId != sellOrder.eventId) {
+                        revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
+                    }
+                    if (buyOrder.outcomeIndex != sellOrder.outcomeIndex) {
+                        revert OutcomeMismatch(buyOrder.outcomeIndex, sellOrder.outcomeIndex);
+                    }
+
+                    // Execute the match (buyer is Taker)
+                    _executeMatch(buyOrderId, sellOrderId, true);
                 }
 
-                if (buyOrder.eventId != sellOrder.eventId) {
-                    revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
-                }
-                if (buyOrder.outcomeIndex != sellOrder.outcomeIndex) {
-                    revert OutcomeMismatch(buyOrder.outcomeIndex, sellOrder.outcomeIndex);
-                }
-                _executeMatch(buyOrderId, sellOrderId);
+                // Get next order in the linked list
+                OrderStruct.DBOrder memory dbOrder = IOrderStorage(orderStorage).getOrder(sellKey);
+                sellKey = dbOrder.next;
             }
+
+            // Get next price level (next higher sell price) - O(log n)
+            bestAsk = IOrderStorage(orderStorage)
+                .getNextPrice(
+                    buyOrder.eventId,
+                    buyOrder.outcomeIndex,
+                    false, // isBuy = false
+                    bestAsk
+                );
         }
     }
 
-    function _matchSell(uint256 sellOrderId, OutcomeOrderBook storage book) internal {
-        Order storage sellOrder = orders[sellOrderId];
+    function _matchSell(uint256 sellOrderId) internal {
+        OrderStruct.Order storage sellOrder = orders[sellOrderId];
 
-        for (uint256 i = 0; i < book.buyPriceLevels.length && sellOrder.remainingAmount > 0; i++) {
-            uint256 buyPrice = book.buyPriceLevels[i];
-            if (buyPrice < sellOrder.price) break;
+        require(orderStorage != address(0), "OrderStorage not set");
 
-            uint256[] storage buyOrders = book.buyOrdersByPrice[buyPrice];
-            for (uint256 j = 0; j < buyOrders.length && sellOrder.remainingAmount > 0; j++) {
-                uint256 buyOrderId = buyOrders[j];
-                Order storage buyOrder = orders[buyOrderId];
+        // Get best bid price (highest buy price) - O(log n)
+        uint128 bestBid = IOrderStorage(orderStorage)
+            .getBestPrice(
+                sellOrder.eventId,
+                sellOrder.outcomeIndex,
+                true // isBuy = true for buy orders
+            );
 
-                // 跳过已完成/已取消的订单，保持数组顺序确保时间优先（FIFO）
+        // Iterate through price levels while match is possible
+        while (bestBid != 0 && bestBid >= uint128(sellOrder.price) && sellOrder.remainingAmount > 0) {
+            // Get first order at this price (O(1))
+            OrderKey buyKey = IOrderStorage(orderStorage)
+                .peekOrder(
+                    sellOrder.eventId,
+                    sellOrder.outcomeIndex,
+                    true, // isBuy = true
+                    bestBid
+                );
+
+            // Iterate through orders at this price level (linked list)
+            while (OrderStruct.isNotSentinel(buyKey) && sellOrder.remainingAmount > 0) {
+                uint256 buyOrderId = orderKeyToId[buyKey];
+                OrderStruct.Order storage buyOrder = orders[buyOrderId];
+
+                // Skip invalid orders
                 if (
-                    buyOrder.status == OrderStatus.Cancelled ||
-                    buyOrder.status == OrderStatus.Filled ||
-                    buyOrder.remainingAmount == 0
+                    buyOrder.status != OrderStruct.OrderStatus.Cancelled
+                        && buyOrder.status != OrderStruct.OrderStatus.Filled && buyOrder.remainingAmount > 0
                 ) {
-                    continue;
+                    // Validate event and outcome match
+                    if (buyOrder.eventId != sellOrder.eventId) {
+                        revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
+                    }
+                    if (buyOrder.outcomeIndex != sellOrder.outcomeIndex) {
+                        revert OutcomeMismatch(buyOrder.outcomeIndex, sellOrder.outcomeIndex);
+                    }
+
+                    // Execute the match (seller is Taker)
+                    _executeMatch(buyOrderId, sellOrderId, false);
                 }
 
-                if (buyOrder.eventId != sellOrder.eventId) {
-                    revert EventMismatch(buyOrder.eventId, sellOrder.eventId);
-                }
-                if (buyOrder.outcomeIndex != sellOrder.outcomeIndex) {
-                    revert OutcomeMismatch(buyOrder.outcomeIndex, sellOrder.outcomeIndex);
-                }
-                _executeMatch(buyOrderId, sellOrderId);
+                // Get next order in the linked list
+                OrderStruct.DBOrder memory dbOrder = IOrderStorage(orderStorage).getOrder(buyKey);
+                buyKey = dbOrder.next;
             }
+
+            // Get next price level (next lower buy price) - O(log n)
+            bestBid = IOrderStorage(orderStorage)
+                .getNextPrice(
+                    sellOrder.eventId,
+                    sellOrder.outcomeIndex,
+                    true, // isBuy = true
+                    bestBid
+                );
         }
     }
 
-    function _executeMatch(uint256 buyOrderId, uint256 sellOrderId) internal {
-        Order storage buyOrder = orders[buyOrderId];
-        Order storage sellOrder = orders[sellOrderId];
+    function _executeMatch(uint256 buyOrderId, uint256 sellOrderId, bool buyerIsTaker) internal {
+        OrderStruct.Order storage buyOrder = orders[buyOrderId];
+        OrderStruct.Order storage sellOrder = orders[sellOrderId];
 
-        uint256 matchAmount = buyOrder.remainingAmount < sellOrder.remainingAmount
-            ? buyOrder.remainingAmount
-            : sellOrder.remainingAmount;
+        uint128 matchAmount =
+            buyOrder.remainingAmount < sellOrder.remainingAmount ? buyOrder.remainingAmount : sellOrder.remainingAmount;
 
-        uint256 matchPrice = sellOrder.price;
+        // Correct match price: Taker accepts Maker's price
+        // If buyer is Taker (new buy order): use sell order price (maker's price)
+        // If seller is Taker (new sell order): use buy order price (maker's price)
+        uint128 matchPrice = buyerIsTaker ? sellOrder.price : buyOrder.price;
 
         buyOrder.filledAmount += matchAmount;
         buyOrder.remainingAmount -= matchAmount;
         sellOrder.filledAmount += matchAmount;
         sellOrder.remainingAmount -= matchAmount;
 
-        // ✅ 计算撮合手续费 (USD)
-        uint256 matchUsd = (matchAmount * matchPrice) / MAX_PRICE;
-        uint256 matchFee = 0;
+        // Calculate match value in USD
+        uint256 matchUsd = (uint256(matchAmount) * uint256(matchPrice)) / MAX_PRICE;
+
+        // Implement maker-taker fee structure
+        uint256 takerFee = 0;
+        uint256 makerFee = 0;
         if (feeVaultManager != address(0)) {
-            matchFee = IFeeVaultManager(feeVaultManager).calculateFee(matchUsd, "execution");
+            // Taker pays 0.25% (25 basis points)
+            takerFee = IFeeVaultManager(feeVaultManager).calculateMakerTakerFee(matchUsd, false);
+            // Maker pays 0.05% (5 basis points)
+            makerFee = IFeeVaultManager(feeVaultManager).calculateMakerTakerFee(matchUsd, true);
         }
 
-        // ✅ 持仓管理: 记录买家持仓增加
-        positions[buyOrder.eventId][buyOrder.outcomeIndex][buyOrder.user] += matchAmount;
-        _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeIndex, buyOrder.user);
+        // 持仓管理: 记录买家持仓增加
+        positions[buyOrder.eventId][buyOrder.outcomeIndex][buyOrder.maker] += matchAmount;
+        _recordPositionHolder(buyOrder.eventId, buyOrder.outcomeIndex, buyOrder.maker);
 
-        // ✅ 持仓管理: 卖家持仓减少(卖出做空)
-        if (positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] >= matchAmount) {
-            positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] -= matchAmount;
+        // 持仓管理: 卖家持仓减少(卖出做空)
+        if (positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.maker] >= matchAmount) {
+            positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.maker] -= matchAmount;
         } else {
-            positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.user] = 0;
+            positions[sellOrder.eventId][sellOrder.outcomeIndex][sellOrder.maker] = 0;
         }
 
         // 集成 FundingManager: 资金结算 (虚拟 Long Token 模型)
-        IFundingManager(fundingManager).settleMatchedOrder(
-            buyOrderId, // 买单 ID
-            sellOrderId, // 卖单 ID
-            buyOrder.user, // 买家地址
-            sellOrder.user, // 卖家地址
-            matchAmount, // 成交数量
-            matchPrice, // 成交价格
-            buyOrder.eventId, // 事件 ID
-            buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
-        );
+        IFundingManager(fundingManager)
+            .settleMatchedOrder(
+                buyOrderId, // 买单 ID
+                sellOrderId, // 卖单 ID
+                buyOrder.maker, // 买家地址
+                sellOrder.maker, // 卖家地址
+                matchAmount, // 成交数量
+                matchPrice, // 成交价格
+                buyOrder.eventId, // 事件 ID
+                buyOrder.outcomeIndex // 结果索引 (买卖同一 outcome)
+            );
 
-        // ✅ 收取撮合手续费
-        if (matchFee > 0 && feeVaultManager != address(0)) {
-            // 买卖双方各支付一半手续费
-            uint256 buyerFee = matchFee / 2;
-            uint256 sellerFee = matchFee - buyerFee;
-
-            if (buyerFee > 0) {
-                IFeeVaultManager(feeVaultManager).collectFee(
-                    buyOrder.tokenAddress,
-                    buyOrder.user,
-                    buyerFee,
-                    buyOrder.eventId,
-                    "execution"
-                );
+        // 收取 Maker-Taker 手续费
+        if (feeVaultManager != address(0)) {
+            // Collect taker fee
+            if (takerFee > 0) {
+                address taker = buyerIsTaker ? buyOrder.maker : sellOrder.maker;
+                address takerToken = buyerIsTaker ? buyOrder.tokenAddress : sellOrder.tokenAddress;
+                IFeeVaultManager(feeVaultManager)
+                    .collectFee(takerToken, taker, takerFee, buyOrder.eventId, "taker_execution");
             }
 
-            if (sellerFee > 0) {
-                IFeeVaultManager(feeVaultManager).collectFee(
-                    sellOrder.tokenAddress,
-                    sellOrder.user,
-                    sellerFee,
-                    sellOrder.eventId,
-                    "execution"
-                );
+            // Collect maker fee
+            if (makerFee > 0) {
+                address maker = buyerIsTaker ? sellOrder.maker : buyOrder.maker;
+                address makerToken = buyerIsTaker ? sellOrder.tokenAddress : buyOrder.tokenAddress;
+                IFeeVaultManager(feeVaultManager)
+                    .collectFee(makerToken, maker, makerFee, buyOrder.eventId, "maker_execution");
             }
         }
 
         if (buyOrder.remainingAmount == 0) {
-            buyOrder.status = OrderStatus.Filled;
+            buyOrder.status = OrderStruct.OrderStatus.Filled;
             _removeFromOrderBook(buyOrderId);
+
+            // 🔧 FIX Issue #11: Return surplus locked USD to buyer
+            // When buy order matches at better price (matchPrice < orderPrice),
+            // surplus USD remains locked. This call returns it to user's balance.
+            // Example: Order at 8000, match at 7000 → 10 USD surplus returned
+            IFundingManager(fundingManager)
+                .unlockForOrder(
+                    buyOrder.maker,
+                    buyOrderId,
+                    true, // isBuyOrder
+                    buyOrder.eventId,
+                    buyOrder.outcomeIndex
+                );
         } else if (buyOrder.filledAmount > 0) {
-            buyOrder.status = OrderStatus.Partial;
+            buyOrder.status = OrderStruct.OrderStatus.Partial;
         }
 
         if (sellOrder.remainingAmount == 0) {
-            sellOrder.status = OrderStatus.Filled;
+            sellOrder.status = OrderStruct.OrderStatus.Filled;
             _removeFromOrderBook(sellOrderId);
+
+            // 🔧 FIX Issue #11: Unlock remaining funds for seller (consistency)
+            // Sell orders lock Long Tokens (fixed amount), not USD value.
+            // No surplus occurs (always consumes exact locked amount), but we call
+            // unlockForOrder() for code consistency and to handle edge cases.
+            IFundingManager(fundingManager)
+                .unlockForOrder(
+                    sellOrder.maker,
+                    sellOrderId,
+                    false, // isBuyOrder
+                    sellOrder.eventId,
+                    sellOrder.outcomeIndex
+                );
         } else if (sellOrder.filledAmount > 0) {
-            sellOrder.status = OrderStatus.Partial;
+            sellOrder.status = OrderStruct.OrderStatus.Partial;
         }
 
         emit OrderMatched(buyOrderId, sellOrderId, buyOrder.eventId, buyOrder.outcomeIndex, matchPrice, matchAmount);
@@ -486,116 +587,93 @@ contract OrderBookManager is
     // Internal: orderbook ops 订单簿操作
     // ------------------------------------------------------------
     function _addToOrderBook(uint256 orderId) internal {
-        Order storage order = orders[orderId];
-        EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
+        OrderStruct.Order storage order = orders[orderId];
 
-        if (order.side == OrderSide.Buy) {
-            if (outcomeOrderBook.buyOrdersByPrice[order.price].length == 0) {
-                _insertBuyPrice(outcomeOrderBook, order.price);
-            }
-            outcomeOrderBook.buyOrdersByPrice[order.price].push(orderId);
-        } else {
-            if (outcomeOrderBook.sellOrdersByPrice[order.price].length == 0) {
-                _insertSellPrice(outcomeOrderBook, order.price);
-            }
-            outcomeOrderBook.sellOrdersByPrice[order.price].push(orderId);
+        // Generate OrderKey from the order
+        OrderKey key = OrderStruct.hash(order);
+        orderKeyToId[key] = orderId;
+
+        // Convert to DBOrder for storage
+        OrderStruct.DBOrder memory dbOrder = OrderStruct.DBOrder({order: order, next: OrderStruct.ORDERKEY_SENTINEL});
+
+        // Store order in OrderStorage (Layer 3)
+        require(orderStorage != address(0), "OrderStorage not set");
+        IOrderStorage(orderStorage).storeOrder(key, dbOrder);
+
+        // Insert price level if new (Layer 1) - O(log n)
+        IOrderStorage(orderStorage)
+            .insertPrice(order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price));
+
+        // Enqueue order at price level (Layer 2) - O(1)
+        IOrderStorage(orderStorage)
+            .enqueueOrder(
+                order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price), key
+            );
+
+        // Track order ID for this event (for efficient cancellation during settlement)
+        eventOrderIds[order.eventId].push(orderId);
+    }
+
+    /**
+     * @notice 从订单簿移除订单
+     * @dev 检查队列是否为空，如果为空则从树中移除价格档位
+     * @param orderId 订单 ID
+     */
+    function _removeFromOrderBook(uint256 orderId) internal {
+        OrderStruct.Order storage order = orders[orderId];
+
+        require(orderStorage != address(0), "OrderStorage not set");
+
+        // Check if queue is empty at this price level
+        bool isEmpty = IOrderStorage(orderStorage)
+            .isQueueEmpty(order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price));
+
+        // If queue is empty, remove price level from tree (O(log n))
+        if (isEmpty) {
+            IOrderStorage(orderStorage)
+                .removePrice(
+                    order.eventId, order.outcomeIndex, order.side == OrderStruct.Side.Buy, uint128(order.price)
+                );
         }
     }
 
     /**
-     * @notice 从订单簿移除订单（使用标记删除策略保持时间优先）
-     * @dev 不物理删除订单，保持数组顺序以确保 FIFO，仅在价格档位全部完成时删除价格档位
-     * @param orderId 订单 ID
+     * @notice Calculate total amount at a specific price using OrderStorage
+     * @dev Iterates through the linked list of orders at the given price
+     * @param eventId Event ID
+     * @param outcomeIndex Outcome index
+     * @param isBuy Whether this is for buy orders (true) or sell orders (false)
+     * @param price The price level
+     * @return total Total remaining amount at this price
      */
-    function _removeFromOrderBook(uint256 orderId) internal {
-        Order storage order = orders[orderId];
-        EventOrderBook storage eventOrderBook = eventOrderBooks[order.eventId];
-        OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[order.outcomeIndex];
-
-        if (order.side == OrderSide.Buy) {
-            uint256[] storage priceOrders = outcomeOrderBook.buyOrdersByPrice[order.price];
-
-            // 标记删除策略：不从数组中物理删除，保持顺序
-            // 订单通过状态（Cancelled/Filled）和 remainingAmount == 0 标记为无效
-            // 撮合时会自动跳过这些订单
-
-            // 检查该价格档位是否所有订单都已完成（可以删除价格档位）
-            bool allCompleted = _isAllOrdersCompleted(priceOrders);
-            if (allCompleted && priceOrders.length > 0) {
-                _removeBuyPrice(outcomeOrderBook, order.price);
-                delete outcomeOrderBook.buyOrdersByPrice[order.price];
-            }
-        } else {
-            uint256[] storage priceOrders = outcomeOrderBook.sellOrdersByPrice[order.price];
-
-            // 标记删除策略：保持数组顺序
-            bool allCompleted = _isAllOrdersCompleted(priceOrders);
-            if (allCompleted && priceOrders.length > 0) {
-                _removeSellPrice(outcomeOrderBook, order.price);
-                delete outcomeOrderBook.sellOrdersByPrice[order.price];
-            }
+    function _totalAtPriceFromStorage(uint256 eventId, uint8 outcomeIndex, bool isBuy, uint128 price)
+        internal
+        view
+        returns (uint256 total)
+    {
+        if (orderStorage == address(0)) {
+            return 0;
         }
-    }
 
-    function _insertBuyPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        uint256 i = 0;
-        while (i < orderBook.buyPriceLevels.length && orderBook.buyPriceLevels[i] > price) {
-            i++;
-        }
-        if (i < orderBook.buyPriceLevels.length && orderBook.buyPriceLevels[i] == price) return;
+        // Get first order at this price
+        OrderKey key = IOrderStorage(orderStorage).peekOrder(eventId, outcomeIndex, isBuy, price);
 
-        orderBook.buyPriceLevels.push(0);
-        for (uint256 j = orderBook.buyPriceLevels.length - 1; j > i; j--) {
-            orderBook.buyPriceLevels[j] = orderBook.buyPriceLevels[j - 1];
-        }
-        orderBook.buyPriceLevels[i] = price;
-    }
+        // Iterate through linked list
+        while (OrderStruct.isNotSentinel(key)) {
+            uint256 orderId = orderKeyToId[key];
+            OrderStruct.Order storage order = orders[orderId];
 
-    function _insertSellPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        uint256 i = 0;
-        while (i < orderBook.sellPriceLevels.length && orderBook.sellPriceLevels[i] < price) {
-            i++;
-        }
-        if (i < orderBook.sellPriceLevels.length && orderBook.sellPriceLevels[i] == price) return;
-
-        orderBook.sellPriceLevels.push(0);
-        for (uint256 j = orderBook.sellPriceLevels.length - 1; j > i; j--) {
-            orderBook.sellPriceLevels[j] = orderBook.sellPriceLevels[j - 1];
-        }
-        orderBook.sellPriceLevels[i] = price;
-    }
-
-    function _removeBuyPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        for (uint256 i = 0; i < orderBook.buyPriceLevels.length; i++) {
-            if (orderBook.buyPriceLevels[i] == price) {
-                for (uint256 j = i; j < orderBook.buyPriceLevels.length - 1; j++) {
-                    orderBook.buyPriceLevels[j] = orderBook.buyPriceLevels[j + 1];
-                }
-                orderBook.buyPriceLevels.pop();
-                break;
-            }
-        }
-    }
-
-    function _removeSellPrice(OutcomeOrderBook storage orderBook, uint256 price) internal {
-        for (uint256 i = 0; i < orderBook.sellPriceLevels.length; i++) {
-            if (orderBook.sellPriceLevels[i] == price) {
-                for (uint256 j = i; j < orderBook.sellPriceLevels.length - 1; j++) {
-                    orderBook.sellPriceLevels[j] = orderBook.sellPriceLevels[j + 1];
-                }
-                orderBook.sellPriceLevels.pop();
-                break;
-            }
-        }
-    }
-
-    function _totalAtPrice(uint256[] storage orderIds) internal view returns (uint256 total) {
-        for (uint256 i = 0; i < orderIds.length; i++) {
-            Order storage order = orders[orderIds[i]];
-            if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
+            // Sum up remaining amount for valid orders
+            if (
+                (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
+                    && order.remainingAmount > 0
+            ) {
                 total += order.remainingAmount;
             }
+
+            // Get next order in linked list
+            OrderStruct.DBOrder memory dbOrder = IOrderStorage(orderStorage).getOrder(key);
+            key = dbOrder.next;
         }
     }
 
@@ -609,11 +687,11 @@ contract OrderBookManager is
         if (orderIds.length == 0) return true;
 
         for (uint256 i = 0; i < orderIds.length; i++) {
-            Order storage order = orders[orderIds[i]];
+            OrderStruct.Order storage order = orders[orderIds[i]];
             // 如果存在任何未完成的订单，返回 false
             if (
-                (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) &&
-                order.remainingAmount > 0
+                (order.status == OrderStruct.OrderStatus.Pending || order.status == OrderStruct.OrderStatus.Partial)
+                    && order.remainingAmount > 0
             ) {
                 return false;
             }
@@ -625,61 +703,36 @@ contract OrderBookManager is
     // Internal: cancel & settle 撤单与结算
     // ------------------------------------------------------------
     function _cancelAllPendingOrders(uint256 eventId) internal {
-        uint8 outcomeCount = eventOutcomeCount[eventId];
-        EventOrderBook storage eventOrderBook = eventOrderBooks[eventId];
-        for (uint8 i = 0; i < outcomeCount; i++) {
-            OutcomeOrderBook storage outcomeOrderBook = eventOrderBook.outcomeOrderBooks[i];
-            _cancelMarketOrders(outcomeOrderBook);
-        }
-    }
+        // Iterate only through orders for this specific event - O(m) where m = orders for this event
+        uint256[] storage orderIds = eventOrderIds[eventId];
+        uint256 length = orderIds.length;
 
-    function _cancelMarketOrders(OutcomeOrderBook storage marketOrderBook) internal {
-        for (uint256 i = 0; i < marketOrderBook.buyPriceLevels.length; i++) {
-            uint256 price = marketOrderBook.buyPriceLevels[i];
-            uint256[] storage ids = marketOrderBook.buyOrdersByPrice[price];
-            for (uint256 j = 0; j < ids.length; j++) {
-                Order storage order = orders[ids[j]];
-                if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
-                    order.status = OrderStatus.Cancelled;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 orderId = orderIds[i];
+            OrderStruct.Order storage order = orders[orderId];
 
-                    // 集成 FundingManager: 批量撤单解锁资金或 Long Token
-                    if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager).unlockForOrder(
-                            order.user,
-                            ids[j], // orderId
-                            order.side == OrderSide.Buy, // 是否为买单
-                            order.eventId,
-                            order.outcomeIndex
-                        );
-                    }
-                }
+            // Skip if already completed/cancelled
+            if (order.status != OrderStruct.OrderStatus.Pending && order.status != OrderStruct.OrderStatus.Partial) {
+                continue;
             }
-        }
 
-        for (uint256 i = 0; i < marketOrderBook.sellPriceLevels.length; i++) {
-            uint256 price = marketOrderBook.sellPriceLevels[i];
-            uint256[] storage ids = marketOrderBook.sellOrdersByPrice[price];
-            for (uint256 j = 0; j < ids.length; j++) {
-                Order storage order = orders[ids[j]];
-                if (order.status == OrderStatus.Pending || order.status == OrderStatus.Partial) {
-                    order.status = OrderStatus.Cancelled;
+            // Cancel the order
+            order.status = OrderStruct.OrderStatus.Cancelled;
 
-                    // 集成 FundingManager: 批量撤单解锁资金或 Long Token
-                    if (order.remainingAmount > 0) {
-                        IFundingManager(fundingManager).unlockForOrder(
-                            order.user,
-                            ids[j], // orderId
-                            order.side == OrderSide.Buy, // 是否为买单
-                            order.eventId,
-                            order.outcomeIndex
-                        );
-                    }
-                }
+            // Unlock funds or Long Tokens
+            if (order.remainingAmount > 0) {
+                IFundingManager(fundingManager).unlockForOrder(
+                    order.maker,
+                    orderId,
+                    order.side == OrderStruct.Side.Buy, // isBuy
+                    order.eventId,
+                    order.outcomeIndex
+                );
             }
         }
     }
 
-    // ✅ 结算持仓 - 集成 FundingManager 标记事件已结算
+    // 结算持仓 - 集成 FundingManager 标记事件已结算
     function _settlePositions(uint256 eventId, uint8 winningOutcomeIndex) internal {
         IFundingManager(fundingManager).markEventSettled(eventId, winningOutcomeIndex);
     }
@@ -706,7 +759,7 @@ contract OrderBookManager is
      * @param orderId 订单 ID
      * @return order 订单详情
      */
-    function getOrder(uint256 orderId) external view returns (Order memory order) {
+    function getOrder(uint256 orderId) external view returns (OrderStruct.Order memory order) {
         return orders[orderId];
     }
 
@@ -751,5 +804,27 @@ contract OrderBookManager is
         require(feeVaultManager == address(0), "OrderBookManager: already set");
         require(_feeVaultManager != address(0), "OrderBookManager: invalid address");
         feeVaultManager = _feeVaultManager;
+    }
+
+    /**
+     * @notice 设置 OrderStorage 地址
+     * @param _orderStorage OrderStorage 地址
+     */
+    function setOrderStorage(address _orderStorage) external onlyOwner nonReentrant {
+        require(orderStorage == address(0), "OrderBookManager: already set");
+        require(_orderStorage != address(0), "OrderBookManager: invalid address");
+        orderStorage = _orderStorage;
+    }
+
+    // ============ OrderValidator Implementation ============
+
+    /**
+     * @notice Get the outcome count for an event
+     * @dev Implementation of abstract function from OrderValidator
+     * @param eventId The event ID to check
+     * @return The number of outcomes for the event (0 if event not registered)
+     */
+    function _getEventOutcomeCount(uint256 eventId) internal view override returns (uint8) {
+        return eventOutcomeCount[eventId];
     }
 }

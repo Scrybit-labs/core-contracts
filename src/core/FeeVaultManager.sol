@@ -12,8 +12,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import {EfficientHashLib} from "@solady/utils/EfficientHashLib.sol";
-
 /**
  * @title FeeVaultManager
  * @notice 手续费金库 Manager - 负责手续费收取、存储和分配
@@ -110,9 +108,14 @@ contract FeeVaultManager is
         __Ownable_init(initialOwner);
         __Pausable_init();
 
-        // 设置默认手续费率
-        _setFeeRate("placement", 10); // 0.1% 下单手续费
-        _setFeeRate("execution", 20); // 0.2% 撮合手续费
+        // 设置 Maker-Taker 手续费率
+        _setFeeRate("maker_placement", 0);   // 0% - Maker 下单免费
+        _setFeeRate("maker_execution", 5);   // 0.05% - Maker 成交手续费
+        _setFeeRate("taker_execution", 25);  // 0.25% - Taker 成交手续费
+
+        // 保留旧费率以兼容现有代码
+        _setFeeRate("placement", 10); // 0.1% 下单手续费（已弃用）
+        _setFeeRate("execution", 20); // 0.2% 撮合手续费（已弃用）
     }
 
     // ============ 核心功能 Core Functions ============
@@ -191,7 +194,7 @@ contract FeeVaultManager is
     function _setFeeRate(string memory feeType, uint256 rate) internal {
         if (rate > MAX_FEE_RATE) revert InvalidFeeRate(rate);
 
-        bytes32 key = EfficientHashLib.hash(bytes(feeType));
+        bytes32 key = keccak256(bytes(feeType));
         uint256 oldRate = feeRates[key];
 
         feeRates[key] = rate;
@@ -228,7 +231,7 @@ contract FeeVaultManager is
      * @return rate 费率(基点)
      */
     function getFeeRate(string calldata feeType) external view returns (uint256 rate) {
-        bytes32 key = EfficientHashLib.hash(bytes(feeType));
+        bytes32 key = keccak256(bytes(feeType));
         return feeRates[key];
     }
 
@@ -239,12 +242,30 @@ contract FeeVaultManager is
      * @return fee 手续费金额
      */
     function calculateFee(uint256 amount, string calldata feeType) external view returns (uint256 fee) {
-        bytes32 key = EfficientHashLib.hash(bytes(feeType));
+        bytes32 key = keccak256(bytes(feeType));
         uint256 rate = feeRates[key];
 
         if (rate == 0) return 0;
 
-        fee = (amount * rate) / FEE_PRECISION;
+        // Use ceiling division to avoid undercharging fees
+        fee = (amount * rate + FEE_PRECISION - 1) / FEE_PRECISION;
+    }
+
+    /**
+     * @notice 计算 Maker-Taker 手续费
+     * @param amount 交易金额 (USD, 1e18)
+     * @param isMaker 是否为 Maker（true=Maker, false=Taker）
+     * @return fee 手续费金额
+     */
+    function calculateMakerTakerFee(uint256 amount, bool isMaker) external view returns (uint256 fee) {
+        string memory feeType = isMaker ? "maker_execution" : "taker_execution";
+        bytes32 key = keccak256(bytes(feeType));
+        uint256 rate = feeRates[key];
+
+        if (rate == 0) return 0;
+
+        // Use ceiling division to avoid undercharging fees
+        fee = (amount * rate + FEE_PRECISION - 1) / FEE_PRECISION;
     }
 
     // ============ 管理功能 Admin Functions ============
