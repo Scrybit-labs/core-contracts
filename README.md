@@ -214,3 +214,13 @@ forge coverage
 
 ## 12. 许可证
 UNLICENSED
+
+## 13.部署合约主网地址hashkey：
+- Deployer:                   0x523df39cAe18ea125930DA730628213e4b147CDc
+- MockOracle:                 0xaFdC7a7871a0207e5d2F079Aa6c101f78700d586
+- MockOracleAdapter (proxy):  0xd5E9adD135979F436242B85fFD474aCec77950c5
+- EventManager (proxy):       0xD3B32Dd902E4EFE5C5186A8a7900157d43a6B450
+- FeeVaultManager (proxy):    0x5A39fE21B2d819EAE1c182749deb3fE2aBD6e597
+- FundingManager (proxy):     0xF3499B0557AfA2336E9F31ECB345f0d088c8EfcD
+- OrderBookManager (proxy):   0xa77ECe2c29480ffE59a4e8859791903277d756De
+- OrderStorage (proxy):       0xE6CEA57f878e907259e579bC23e54626B53C7C09

@@ -139,43 +139,51 @@ create-deployments-dir:
 
 # ============ HashKey 合约验证 (Blockscout) ============
 # 部署地址 (2026-04-20):
-#   MockOracle:                0x394543f56C80712A2aE88DF2235cf35719742C84
-#   MockOracleAdapter (proxy): 0x9C43049028A1989B7C070a498CD7F006822E0106
-#   EventManager (proxy):      0xE9E53687668a71c7d84838DAf1522cb7D9978056
-#   FeeVaultManager (proxy):   0xF95C4756570581eDBFb5E9Ec32c1e6B4220Ad504
-#   FundingManager (proxy):    0x5B6e19bBf8b9A74DAfEb981B47694c458318194B
-#   OrderBookManager (proxy):  0x2BB9c9c4D5e2cD7D5Acb6880b0c23229A43029be
+# Deployer:                   0x523df39cAe18ea125930DA730628213e4b147CDc
+# MockOracle:                 0xaFdC7a7871a0207e5d2F079Aa6c101f78700d586
+# MockOracleAdapter (proxy):  0xd5E9adD135979F436242B85fFD474aCec77950c5
+# EventManager (proxy):       0xD3B32Dd902E4EFE5C5186A8a7900157d43a6B450
+# FeeVaultManager (proxy):    0x5A39fE21B2d819EAE1c182749deb3fE2aBD6e597
+# FundingManager (proxy):     0xF3499B0557AfA2336E9F31ECB345f0d088c8EfcD
+# OrderBookManager (proxy):   0xa77ECe2c29480ffE59a4e8859791903277d756De
+# OrderStorage (proxy):       0xE6CEA57f878e907259e579bC23e54626B53C7C09
 
 HASHKEY_VERIFY_ARGS := --rpc-url https://mainnet.hsk.xyz --verifier blockscout --verifier-url 'https://hashkey.blockscout.com/api/'
 
 verify-hashkey-mock-oracle:
 	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
-	  0x394543f56C80712A2aE88DF2235cf35719742C84 \
+	  0xaFdC7a7871a0207e5d2F079Aa6c101f78700d586 \
 	  src/oracle/mock/MockOracle.sol:MockOracle
 
 verify-hashkey-oracle-adapter:
 	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
-	  0x9C43049028A1989B7C070a498CD7F006822E0106 \
+	  0xd5E9adD135979F436242B85fFD474aCec77950c5 \
 	  src/oracle/mock/MockOracleAdapterProxy.sol:MockOracleAdapterProxy
 
 verify-hashkey-event-manager:
 	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
-	  0xE9E53687668a71c7d84838DAf1522cb7D9978056 \
+	  0xD3B32Dd902E4EFE5C5186A8a7900157d43a6B450 \
 	  src/core/proxies/EventManagerProxy.sol:EventManagerProxy
 
 verify-hashkey-fee-vault-manager:
 	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
-	  0xF95C4756570581eDBFb5E9Ec32c1e6B4220Ad504 \
+	  0x5A39fE21B2d819EAE1c182749deb3fE2aBD6e597 \
 	  src/core/proxies/FeeVaultManagerProxy.sol:FeeVaultManagerProxy
 
 verify-hashkey-funding-manager:
 	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
-	  0x5B6e19bBf8b9A74DAfEb981B47694c458318194B \
+	  0xF3499B0557AfA2336E9F31ECB345f0d088c8EfcD \
 	  src/core/proxies/FundingManagerProxy.sol:FundingManagerProxy
 
 verify-hashkey-order-book-manager:
 	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
-	  0x2BB9c9c4D5e2cD7D5Acb6880b0c23229A43029be \
+	  0xa77ECe2c29480ffE59a4e8859791903277d756De \
 	  src/core/proxies/OrderBookManagerProxy.sol:OrderBookManagerProxy
+
+
+verify-hashkey-order-storage:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0xE6CEA57f878e907259e579bC23e54626B53C7C09 \
+	  src/core/proxies/OrderStorageProxy.sol:OrderStorageProxy
 
 verify-hashkey-all: verify-hashkey-mock-oracle verify-hashkey-oracle-adapter verify-hashkey-event-manager verify-hashkey-fee-vault-manager verify-hashkey-funding-manager verify-hashkey-order-book-manager
