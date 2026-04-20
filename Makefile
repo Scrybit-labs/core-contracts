@@ -101,36 +101,81 @@ deploy-optimism-sepolia:
 	@forge script script/DeploySWToken.s.sol:DeploySWToken $(NETWORK_OPTIMISM_SEPOLIA)
 
 # ============ Prediction Market Deployment ============
+DEPLOY_SCRIPT := script/deploy/V1/DeployV1.s.sol:DeployV1
+
 deploy-prediction-local:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast -vv
+	@forge script $(DEPLOY_SCRIPT) --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast -vv
 
 deploy-prediction-sepolia:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_SEPOLIA)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_SEPOLIA)
 
 deploy-prediction-roothash:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_ROOTHASH)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_ROOTHASH)
 
 deploy-prediction-hashkey:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_HASHKEY)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_HASHKEY)
 
 deploy-prediction-base-sepolia:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_BASE_SEPOLIA)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_BASE_SEPOLIA)
 
 deploy-prediction-base:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_BASE)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_BASE)
 
 deploy-prediction-arbitrum-sepolia:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_ARBITRUM_SEPOLIA)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_ARBITRUM_SEPOLIA)
 
 deploy-prediction-arbitrum:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_ARBITRUM)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_ARBITRUM)
 
 deploy-prediction-optimism-sepolia:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_OPTIMISM_SEPOLIA)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_OPTIMISM_SEPOLIA)
 
 deploy-prediction-optimism:
-	@forge script script/SimpleDeploy.s.sol:SimpleDeploy $(NETWORK_OPTIMISM)
+	@forge script $(DEPLOY_SCRIPT) $(NETWORK_OPTIMISM)
 
 # Create deployments directory
 create-deployments-dir:
 	@mkdir -p deployments
+
+# ============ HashKey 合约验证 (Blockscout) ============
+# 部署地址 (2026-04-20):
+#   MockOracle:                0x394543f56C80712A2aE88DF2235cf35719742C84
+#   MockOracleAdapter (proxy): 0x9C43049028A1989B7C070a498CD7F006822E0106
+#   EventManager (proxy):      0xE9E53687668a71c7d84838DAf1522cb7D9978056
+#   FeeVaultManager (proxy):   0xF95C4756570581eDBFb5E9Ec32c1e6B4220Ad504
+#   FundingManager (proxy):    0x5B6e19bBf8b9A74DAfEb981B47694c458318194B
+#   OrderBookManager (proxy):  0x2BB9c9c4D5e2cD7D5Acb6880b0c23229A43029be
+
+HASHKEY_VERIFY_ARGS := --rpc-url https://mainnet.hsk.xyz --verifier blockscout --verifier-url 'https://hashkey.blockscout.com/api/'
+
+verify-hashkey-mock-oracle:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0x394543f56C80712A2aE88DF2235cf35719742C84 \
+	  src/oracle/mock/MockOracle.sol:MockOracle
+
+verify-hashkey-oracle-adapter:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0x9C43049028A1989B7C070a498CD7F006822E0106 \
+	  src/oracle/mock/MockOracleAdapterProxy.sol:MockOracleAdapterProxy
+
+verify-hashkey-event-manager:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0xE9E53687668a71c7d84838DAf1522cb7D9978056 \
+	  src/core/proxies/EventManagerProxy.sol:EventManagerProxy
+
+verify-hashkey-fee-vault-manager:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0xF95C4756570581eDBFb5E9Ec32c1e6B4220Ad504 \
+	  src/core/proxies/FeeVaultManagerProxy.sol:FeeVaultManagerProxy
+
+verify-hashkey-funding-manager:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0x5B6e19bBf8b9A74DAfEb981B47694c458318194B \
+	  src/core/proxies/FundingManagerProxy.sol:FundingManagerProxy
+
+verify-hashkey-order-book-manager:
+	@forge verify-contract $(HASHKEY_VERIFY_ARGS) \
+	  0x2BB9c9c4D5e2cD7D5Acb6880b0c23229A43029be \
+	  src/core/proxies/OrderBookManagerProxy.sol:OrderBookManagerProxy
+
+verify-hashkey-all: verify-hashkey-mock-oracle verify-hashkey-oracle-adapter verify-hashkey-event-manager verify-hashkey-fee-vault-manager verify-hashkey-funding-manager verify-hashkey-order-book-manager
