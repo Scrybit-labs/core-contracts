@@ -11,6 +11,7 @@ via_ir = true  # 启用 IR 编译器，进一步优化
 
 # Solidity 编译器版本
 solc_version = "0.8.33"
+ignored_warnings_from = ["lib/"]
 
 # 启用额外的优化器细节
 [profile.default.optimizer_details]
@@ -27,6 +28,10 @@ fs_permissions = [
     { access = "read-write", path = "./" },
     { access = "read-write", path = "./deployments" }
 ]
+
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
+mainnet = "${MAINNET_RPC_URL}"
 
 # ============ 测试配置 ============
 [profile.test]

@@ -60,9 +60,6 @@ contract EventManager is
     /// @notice OrderBookManager 合约地址(用于触发结算)
     address public orderBookManager;
 
-    /// @notice 默认 OracleAdapter 合约地址(用于发起新请求)
-    address public defaultOracleAdapter;
-
     /// @notice 事件存储数组
     Event[] internal events;
 
@@ -71,6 +68,9 @@ contract EventManager is
 
     /// @notice Event type to oracle adapter mapping
     mapping(bytes32 => address) public eventTypeToOracleAdapter;
+
+    /// @notice 默认 OracleAdapter 合约地址(用于发起新请求)
+    address public defaultOracleAdapter;
 
     /// @notice Authorized oracle adapters for callbacks
     mapping(address => bool) public authorizedOracleAdapters;
@@ -505,7 +505,7 @@ contract EventManager is
      * @return OracleAdapter 地址
      */
     function getEventTypeOracleAdapter(bytes32 eventType) external view returns (address) {
-        return eventTypeToOracleAdapter[eventType];
+        return _getOracleAdapterForEventType(eventType);
     }
 
     /**
