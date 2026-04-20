@@ -64,7 +64,7 @@
         "source=${localEnv:HOME}/.codex/auth.json,target=/tmp/codex-auth.json,type=bind,readonly",
         "source=${localEnv:HOME}/.codex/config.toml,target=/tmp/codex-config.toml,type=bind,readonly",
         "source=${localEnv:HOME}/.config/anthropic-cc/cred.sh,target=/tmp/anthropic-cred.sh,type=bind,readonly",
-        "source=${localEnv:HOME}/Dev/Utils/ClaudeCodeConfig/Standard Workflow.md,target=/tmp/claude-workflow.md,type=bind,readonly",
+        "source=${localEnv:HOME}/Dev/Utils/Dev-container-creator/claude-config,target=/tmp/claude-config,type=bind,readonly",
         "source=${localEnv:HOME}/.ssh/forwarded-agent.sock,target=/ssh-agent,type=bind",
         "source=${localEnv:HOME}/.ssh/authorized_keys,target=/tmp/ssh-authorized-keys,type=bind,readonly",
         "source=${localEnv:HOME}/.terminfo/x/xterm-ghostty,target=/tmp/xterm-ghostty.terminfo,type=bind,readonly",
